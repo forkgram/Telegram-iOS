@@ -1054,6 +1054,19 @@ static void copyKeychainDictionaryKey(NSString * _Nonnull group, NSString * _Non
                 }
             }
         }
+        
+        // Appended last on purpose: `chooseTransportSchemeForConnectionToDatacenterId` walks the
+        // list in reverse and keeps the first scheme it sees when failure timestamps tie, so a
+        // WebSocket endpoint is tried first while it is healthy and TCP (whose stats then have
+        // the older failure, i.e. 0) takes over as soon as the WebSocket scheme has failed once.
+        if (!isAddressOverride && self.webSocketAddressesProvider != nil) {
+            for (MTDatacenterAddress *address in self.webSocketAddressesProvider(datacenterId, media)) {
+                if (![address isWebSocket]) {
+                    continue;
+                }
+                [results addObject:[[MTTransportScheme alloc] initWithTransportClass:[MTTcpTransport class] address:address media:media]];
+            }
+        }
     } synchronous:true];
     
     for (int i = (int)(results.count - 1); i >= 0; i--) {
@@ -1082,6 +1095,20 @@ static void copyKeychainDictionaryKey(NSString * _Nonnull group, NSString * _Non
     }
     
     return results;
+}
+
+- (void)refreshTransportSchemesForDatacenterWithId:(NSInteger)datacenterId {
+    [[MTContext contextQueue] dispatchOnQueue:^{
+        NSArray<MTWeakContextChangeListener *> *changeListeners = [[NSArray alloc] initWithArray:_changeListeners];
+        for (MTWeakContextChangeListener *listenerWrapper in changeListeners) {
+            id<MTContextChangeListener> listener = listenerWrapper.target;
+            if (listener) {
+                if ([listener respondsToSelector:@selector(contextDatacenterTransportSchemesUpdated:datacenterId:shouldReset:)]) {
+                    [listener contextDatacenterTransportSchemesUpdated:self datacenterId:datacenterId shouldReset:true];
+                }
+            }
+        }
+    }];
 }
 
 - (MTDatacenterAuthInfo *)authInfoForDatacenterWithId:(NSInteger)datacenterId selector:(MTDatacenterAuthInfoSelector)selector {

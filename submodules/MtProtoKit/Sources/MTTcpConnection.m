@@ -863,6 +863,8 @@ struct ctr_state {
 
 @property (nonatomic, copy) id<MTTcpConnectionInterface> _Nonnull (^ _Nullable makeTcpConnectionInterface)(id<MTTcpConnectionInterfaceDelegate> _Nonnull delegate, dispatch_queue_t _Nonnull delegateQueue);
 
+@property (nonatomic, copy) id<MTTcpConnectionInterface> _Nullable (^ _Nullable makeWebSocketConnectionInterface)(MTDatacenterAddress * _Nonnull address, id<MTTcpConnectionInterfaceDelegate> _Nonnull delegate, dispatch_queue_t _Nonnull delegateQueue);
+
 @end
 
 @implementation MTTcpConnection
@@ -899,6 +901,7 @@ struct ctr_state {
         _usageCalculationInfo = usageCalculationInfo;
         
         _makeTcpConnectionInterface = context.makeTcpConnectionInterface;
+        _makeWebSocketConnectionInterface = context.makeWebSocketConnectionInterface;
         
         if (context.apiEnvironment.datacenterAddressOverrides[@(datacenterId)] != nil) {
             _firstPacketControlByte = [context.apiEnvironment tcpPayloadPrefix];
@@ -953,8 +956,7 @@ struct ctr_state {
 
 - (void)dealloc
 {
-    GCDAsyncSocket *socket = _socket;
-    socket.delegate = nil;
+    id<MTTcpConnectionInterface> socket = _socket;
     _socket = nil;
     
     MTTimer *responseTimeoutTimer = _responseTimeoutTimer;
@@ -992,8 +994,28 @@ struct ctr_state {
     {
         if (_socket == nil)
         {
-            if (_makeTcpConnectionInterface) {
-                _socket = _makeTcpConnectionInterface(self, [[MTTcpConnection tcpQueue] nativeQueue]);
+            id<MTTcpConnectionInterface> injected = nil;
+            if (_scheme.address.isWebSocket) {
+                // A WebSocket endpoint is not reachable as a plain socket: the scheme's address
+                // is the host to send the upgrade to. Its interface is built here because only
+                // this object knows which scheme the connection belongs to.
+                if (_makeWebSocketConnectionInterface) {
+                    injected = _makeWebSocketConnectionInterface(_scheme.address, self, [[MTTcpConnection tcpQueue] nativeQueue]);
+                }
+                if (injected == nil) {
+                    if (MTLogEnabled()) {
+                        MTLog(@"[MTTcpConnection#%" PRIxPTR " no WebSocket interface for %@; failing]", (intptr_t)self, _scheme.address);
+                    }
+                    [self closeAndNotifyWithError:true];
+                    return;
+                }
+            } else if (_makeTcpConnectionInterface) {
+                injected = _makeTcpConnectionInterface(self, [[MTTcpConnection tcpQueue] nativeQueue]);
+            }
+            _socket = injected;
+            if (_socket == nil) {
+                _socket = [[MTGcdAsyncSocketTcpConnectionInterface alloc] initWithDelegate:self delegateQueue:[[MTTcpConnection tcpQueue] nativeQueue]];
+            }
             }
             if (_socket == nil) {
                 _socket = [[MTGcdAsyncSocketTcpConnectionInterface alloc] initWithDelegate:self delegateQueue:[[MTTcpConnection tcpQueue] nativeQueue]];

@@ -16646,3 +16646,14 @@ Error: %8$@";
 "HiddenAccounts.CodeType6Digits" = "6 digits";
 "HiddenAccounts.CodeTypeAlphanumeric" = "a password";
 "HiddenAccounts.StaleCodeTypeInfo" = "Some unlock codes no longer match your app passcode and can no longer be entered on the passcode screen. Open the account below and change its code to %@.";
+
+/* The WebSocket transport strings. The generator assigns selector ids (_La, _Lb, ...) by
+   position in the alphabetically sorted key list, so a key inserted in the middle shifts every
+   later id and silently breaks already-compiled callers ("unrecognized selector" / SIGBUS in
+   getFormattedN). These keys therefore use a "zz." prefix, which sorts after every other key,
+   keeping all existing ids and only appending new ones. Do not rename them to a "W..." key
+   without rebuilding every module that imports PresentationStrings. */
+"zz.WebSocketTransport" = "WebSocket Transport";
+"zz.WebSocketTransportInfo" = "Connects to Telegram through its WebSocket endpoints, the same way the web client does, with automatic relay domains. Use it when the app cannot connect or media does not load on this network. It replaces the plain connection, so it does not combine with a proxy, and it falls back to the plain connection after repeated failures.";
+"zz.WebSocketRelayDomain" = "Relay Domain";
+"zz.WebSocketRelayDomainAutomatic" = "Automatic";

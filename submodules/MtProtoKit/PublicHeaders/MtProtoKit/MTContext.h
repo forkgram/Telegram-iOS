@@ -82,6 +82,24 @@
 
 @property (nonatomic, copy) id<MTTcpConnectionInterface> _Nonnull (^ _Nullable makeTcpConnectionInterface)(id<MTTcpConnectionInterfaceDelegate> _Nonnull delegate, dispatch_queue_t _Nonnull delegateQueue);
 
+/// Creates the connection interface for a WebSocket transport address (one whose
+/// `webSocketPath` is set). A WebSocket address cannot go through
+/// `makeTcpConnectionInterface`, which is installed for plain sockets and for proxy carriers
+/// and has no way to learn the scheme it is being used for. Nil leaves WebSocket addresses to
+/// the ordinary interface, i.e. they fail.
+@property (nonatomic, copy, nullable) id<MTTcpConnectionInterface> _Nullable (^makeWebSocketConnectionInterface)(MTDatacenterAddress * _Nonnull address, id<MTTcpConnectionInterfaceDelegate> _Nonnull delegate, dispatch_queue_t _Nonnull delegateQueue);
+
+/// WebSocket endpoints offered alongside the TCP schemes of a datacenter. Returns addresses
+/// whose `webSocketPath` is set (see MTDatacenterAddress); the caller adds them to the scheme
+/// list for the given datacenter and media kind. Returning an empty array leaves the
+/// datacenter on plain TCP. Called on the context queue, so it must not block.
+@property (nonatomic, copy, nullable) NSArray<MTDatacenterAddress *> * _Nonnull (^webSocketAddressesProvider)(NSInteger datacenterId, bool media);
+
+/// Re-announces the transport schemes of a datacenter, so its transport is rebuilt from
+/// whatever the current scheme list (and the WebSocket provider) says. Used when WebSocket
+/// endpoints appear, disappear or become unavailable.
+- (void)refreshTransportSchemesForDatacenterWithId:(NSInteger)datacenterId;
+
 + (int32_t)fixedTimeDifference;
 + (void)setFixedTimeDifference:(int32_t)fixedTimeDifference;
 

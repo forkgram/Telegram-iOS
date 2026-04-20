@@ -21,12 +21,31 @@
     return self;
 }
 
+- (instancetype)initWithWebSocketIp:(NSString *)ip port:(uint16_t)port path:(NSString *)path preferForMedia:(bool)preferForMedia
+{
+    self = [super init];
+    if (self != nil)
+    {
+        _ip = ip;
+        _port = port;
+        _webSocketPath = path;
+        _preferForMedia = preferForMedia;
+    }
+    return self;
+}
+
+- (bool)isWebSocket
+{
+    return _webSocketPath != nil;
+}
+
 - (instancetype)initWithCoder:(NSCoder *)aDecoder
 {
     self = [super init];
     if (self != nil)
     {
         _ip = [aDecoder decodeObjectForKey:@"ip"];
+        _webSocketPath = [aDecoder decodeObjectForKey:@"webSocketPath"];
         _host = [aDecoder decodeObjectForKey:@"host"];
         _port = (uint16_t)[aDecoder decodeIntForKey:@"port"];
         _preferForMedia = [aDecoder decodeBoolForKey:@"preferForMedia"];
@@ -41,6 +60,7 @@
 - (void)encodeWithCoder:(NSCoder *)aCoder
 {
     [aCoder encodeObject:_ip forKey:@"ip"];
+    [aCoder encodeObject:_webSocketPath forKey:@"webSocketPath"];
     [aCoder encodeObject:_host forKey:@"host"];
     [aCoder encodeInt:_port forKey:@"port"];
     [aCoder encodeBool:_preferForMedia forKey:@"preferForMedia"];
@@ -63,7 +83,7 @@
 }
 
 - (NSUInteger)hash {
-    return [_ip hash] * 31 + ((NSUInteger)_port);
+    return [_ip hash] * 31 + ((NSUInteger)_port) * 7 + [_webSocketPath hash];
 }
 
 - (BOOL)isEqualToAddress:(MTDatacenterAddress *)other
@@ -73,6 +93,13 @@
     
     if (![_ip isEqualToString:other.ip])
         return false;
+    
+    if ((_webSocketPath != nil) != (other->_webSocketPath != nil)) {
+        return false;
+    }
+    if (_webSocketPath != nil && ![_webSocketPath isEqualToString:other->_webSocketPath]) {
+        return false;
+    }
     
     if (_port != other.port)
         return false;
@@ -116,7 +143,7 @@
 
 - (NSString *)description
 {
-    return [[NSString alloc] initWithFormat:@"%@:%d (media: %@, cdn: %@, static: %@, secret: %@)", _ip == nil ? _host : _ip, (int)_port, _preferForMedia ? @"yes" : @"no", _cdn ? @"yes" : @"no", _preferForProxy ? @"yes" : @"no", _secret];
+    return [[NSString alloc] initWithFormat:@"%@:%d (media: %@, cdn: %@, static: %@, secret: %@, ws: %@)", _ip == nil ? _host : _ip, (int)_port, _preferForMedia ? @"yes" : @"no", _cdn ? @"yes" : @"no", _preferForProxy ? @"yes" : @"no", _secret, _webSocketPath];
 }
 
 @end

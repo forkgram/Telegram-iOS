@@ -20,8 +20,11 @@ private final class ProxySettingsControllerArguments {
     let setServerWithRevealedOptions: (ProxyServerSettings?, ProxyServerSettings?) -> Void
     let toggleUseForCalls: (Bool) -> Void
     let shareProxyList: () -> Void
+    let updateWebSocketDomain: (String) -> Void
+    let setWebSocketEnabled: (Bool) -> Void
+    let applyWebSocketDomain: () -> Void
     
-    init(toggleEnabled: @escaping (Bool) -> Void, addNewServer: @escaping () -> Void, activateServer: @escaping (ProxyServerSettings) -> Void, editServer: @escaping (ProxyServerSettings) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, toggleUseForCalls: @escaping (Bool) -> Void, shareProxyList: @escaping () -> Void) {
+    init(toggleEnabled: @escaping (Bool) -> Void, addNewServer: @escaping () -> Void, activateServer: @escaping (ProxyServerSettings) -> Void, editServer: @escaping (ProxyServerSettings) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, toggleUseForCalls: @escaping (Bool) -> Void, shareProxyList: @escaping () -> Void, updateWebSocketDomain: @escaping (String) -> Void, setWebSocketEnabled: @escaping (Bool) -> Void, applyWebSocketDomain: @escaping () -> Void) {
         self.toggleEnabled = toggleEnabled
         self.addNewServer = addNewServer
         self.activateServer = activateServer
@@ -30,10 +33,14 @@ private final class ProxySettingsControllerArguments {
         self.setServerWithRevealedOptions = setServerWithRevealedOptions
         self.toggleUseForCalls = toggleUseForCalls
         self.shareProxyList = shareProxyList
+        self.updateWebSocketDomain = updateWebSocketDomain
+        self.setWebSocketEnabled = setWebSocketEnabled
+        self.applyWebSocketDomain = applyWebSocketDomain
     }
 }
 
 private enum ProxySettingsControllerSection: Int32 {
+    case webSocket
     case enabled
     case servers
     case share
@@ -80,6 +87,9 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
     case shareProxyList(PresentationTheme, String)
     case useForCalls(PresentationTheme, String, Bool)
     case useForCallsInfo(PresentationTheme, String)
+    case webSocketTransport(PresentationTheme, String, Bool)
+    case webSocketDomain(PresentationTheme, String, String, String)
+    case webSocketInfo(PresentationTheme, String)
     
     var section: ItemListSectionId {
         switch self {
@@ -91,6 +101,8 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                 return ProxySettingsControllerSection.share.rawValue
             case .useForCalls, .useForCallsInfo:
                 return ProxySettingsControllerSection.calls.rawValue
+            case .webSocketTransport, .webSocketDomain, .webSocketInfo:
+                return ProxySettingsControllerSection.webSocket.rawValue
         }
     }
     
@@ -110,6 +122,12 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                 return .index(4)
             case .useForCallsInfo:
                 return .index(5)
+            case .webSocketTransport:
+                return .index(6)
+            case .webSocketDomain:
+                return .index(7)
+            case .webSocketInfo:
+                return .index(8)
         }
     }
     
@@ -157,58 +175,57 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                 } else {
                     return false
                 }
+            case let .webSocketTransport(lhsTheme, lhsText, lhsValue):
+                if case let .webSocketTransport(rhsTheme, rhsText, rhsValue) = rhs, lhsTheme === rhsTheme, lhsText == rhsText, lhsValue == rhsValue {
+                    return true
+                } else {
+                    return false
+                }
+            case let .webSocketDomain(lhsTheme, lhsText, lhsValue, lhsPlaceholder):
+                if case let .webSocketDomain(rhsTheme, rhsText, rhsValue, rhsPlaceholder) = rhs, lhsTheme === rhsTheme, lhsText == rhsText, lhsValue == rhsValue, lhsPlaceholder == rhsPlaceholder {
+                    return true
+                } else {
+                    return false
+                }
+            case let .webSocketInfo(lhsTheme, lhsText):
+                if case let .webSocketInfo(rhsTheme, rhsText) = rhs, lhsTheme === rhsTheme, lhsText == rhsText {
+                    return true
+                } else {
+                    return false
+                }
+        }
+    }
+    
+    var orderIndex: Int {
+        switch self {
+        case .webSocketTransport:
+            return 0
+        case .webSocketDomain:
+            return 1
+        case .webSocketInfo:
+            return 2
+        case .enabled:
+            return 3
+        case .serversHeader:
+            return 4
+        case .addServer:
+            return 5
+        case .server:
+            return 6
+        case .shareProxyList:
+            return 7
+        case .useForCalls:
+            return 8
+        case .useForCallsInfo:
+            return 9
         }
     }
     
     static func <(lhs: ProxySettingsControllerEntry, rhs: ProxySettingsControllerEntry) -> Bool {
-        switch lhs {
-            case .enabled:
-                switch rhs {
-                    case .enabled:
-                        return false
-                    default:
-                        return true
-                }
-            case .serversHeader:
-                switch rhs {
-                    case .enabled, .serversHeader:
-                        return false
-                    default:
-                        return true
-                }
-            case .addServer:
-                switch rhs {
-                    case .enabled, .serversHeader, .addServer:
-                        return false
-                    default:
-                        return true
-                }
-            case let .server(lhsIndex, _, _, _, _, _, _, _):
-                switch rhs {
-                    case .enabled, .serversHeader, .addServer:
-                        return false
-                    case let .server(rhsIndex, _, _, _, _, _, _, _):
-                        return lhsIndex < rhsIndex
-                    default:
-                        return true
-                }
-            case .shareProxyList:
-                switch rhs {
-                    case .enabled, .serversHeader, .addServer, .server, .shareProxyList:
-                        return false
-                    default:
-                        return true
-            }
-            case .useForCalls:
-                switch rhs {
-                    case .enabled, .serversHeader, .addServer, .server, .shareProxyList, .useForCalls:
-                        return false
-                    default:
-                        return true
-                }
-            case .useForCallsInfo:
-                return false
+        if case let .server(lhsIndex, _, _, _, _, _, _, _) = lhs, case let .server(rhsIndex, _, _, _, _, _, _, _) = rhs {
+            return lhsIndex < rhsIndex
         }
+        return lhs.orderIndex < rhs.orderIndex
     }
     
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
@@ -248,6 +265,17 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                 }, tag: ProxySettingsEntryTag.useForCalls)
             case let .useForCallsInfo(_, text):
                 return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
+            case let .webSocketTransport(_, text, value):
+                return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: text, value: value, enableInteractiveChanges: true, enabled: true, sectionId: self.section, style: .blocks, updated: { value in
+                    arguments.setWebSocketEnabled(value)
+                })
+            case let .webSocketDomain(_, text, value, placeholder):
+                return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: text, textColor: presentationData.theme.list.itemPrimaryTextColor), text: value, placeholder: placeholder, type: .regular(capitalization: false, autocorrection: false), returnKeyType: .done, sectionId: self.section, textUpdated: { value in
+                    arguments.updateWebSocketDomain(value)
+                }, action: {
+                })
+            case let .webSocketInfo(_, text):
+                return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         }
     }
 }
@@ -255,6 +283,14 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
 private func proxySettingsControllerEntries(theme: PresentationTheme, strings: PresentationStrings, state: ProxySettingsControllerState, proxySettings: ProxySettings, statuses: [ProxyServerSettings: ProxyServerStatus], connectionStatus: ConnectionStatus) -> [ProxySettingsControllerEntry] {
     var entries: [ProxySettingsControllerEntry] = []
 
+    // MTProto over WebSocket is independent of the proxy list below: it replaces the plain
+    // datacenter connection rather than routing it through a server the user picked.
+    entries.append(.webSocketTransport(theme, strings.zz_WebSocketTransport, state.webSocketEnabled))
+    if state.webSocketEnabled {
+        entries.append(.webSocketDomain(theme, strings.zz_WebSocketRelayDomain, state.webSocketDomain, strings.zz_WebSocketRelayDomainAutomatic))
+    }
+    entries.append(.webSocketInfo(theme, strings.zz_WebSocketTransportInfo))
+    
     entries.append(.enabled(theme, strings.ChatSettings_ConnectionType_UseProxy, proxySettings.enabled, proxySettings.servers.isEmpty))
     entries.append(.serversHeader(theme, strings.SocksProxySetup_SavedProxies))
     entries.append(.addServer(theme, strings.SocksProxySetup_AddProxy, state.editing))
@@ -319,6 +355,8 @@ private func proxySettingsControllerEntries(theme: PresentationTheme, strings: P
 private struct ProxySettingsControllerState: Equatable {
     var editing: Bool = false
     var revealedServer: ProxyServerSettings? = nil
+    var webSocketEnabled: Bool = false
+    var webSocketDomain: String = ""
 }
 
 public enum ProxySettingsControllerMode {
@@ -334,7 +372,7 @@ public func proxySettingsController(context: AccountContext, mode: ProxySettings
 public func proxySettingsController(accountManager: AccountManager<TelegramAccountManagerTypes>, sharedContext: SharedAccountContext, context: AccountContext? = nil, network: Network, mode: ProxySettingsControllerMode, presentationData: PresentationData, updatedPresentationData: Signal<PresentationData, NoError>, focusOnItemTag: ProxySettingsEntryTag? = nil) -> ViewController {
     var pushControllerImpl: ((ViewController) -> Void)?
     var dismissImpl: (() -> Void)?
-    let stateValue = Atomic(value: ProxySettingsControllerState())
+    let stateValue = Atomic(value: ProxySettingsControllerState(webSocketEnabled: NetworkWebSocketTransport.shared.isEnabled, webSocketDomain: NetworkWebSocketTransport.shared.currentUserDomain))
     let statePromise = ValuePromise<ProxySettingsControllerState>(stateValue.with { $0 })
     let updateState: ((ProxySettingsControllerState) -> ProxySettingsControllerState) -> Void = { f in
         var changed = false
@@ -409,6 +447,28 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
         }).start()
     }, shareProxyList: {
        shareProxyListImpl?()
+    }, updateWebSocketDomain: { value in
+        updateState { state in
+            var state = state
+            state.webSocketDomain = value
+            return state
+        }
+    }, setWebSocketEnabled: { value in
+        updateState { state in
+            var state = state
+            state.webSocketEnabled = value
+            return state
+        }
+        NetworkWebSocketTransport.shared.setEnabled(value, domain: NetworkWebSocketTransport.shared.currentUserDomain)
+    }, applyWebSocketDomain: {
+        let domain = stateValue.with { $0.webSocketDomain }
+        let normalized = NetworkWebSocketTransport.normalizeDomain(domain)
+        updateState { state in
+            var state = state
+            state.webSocketDomain = normalized
+            return state
+        }
+        NetworkWebSocketTransport.shared.setEnabled(true, domain: normalized)
     })
     
     let proxySettings = Promise<ProxySettings>()

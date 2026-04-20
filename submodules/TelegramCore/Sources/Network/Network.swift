@@ -525,6 +525,27 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
                     }
                 }
             }
+
+            // MTProto over WebSocket: the endpoints are offered as extra transport schemes of
+            // datacenters 1...5 (MTContext.webSocketAddressesProvider) and are reached with
+            // their own connection interface. Both are installed here, before any transport
+            // exists, so the first connection of the account can already use them.
+            let webSocketTransport = NetworkWebSocketTransport.shared
+            context.webSocketAddressesProvider = { [weak context] datacenterId, media in
+                if let context = context, context.apiEnvironment.socksProxySettings != nil {
+                    return []
+                }
+                return webSocketTransport.addresses(datacenterId: Int(datacenterId), media: media)
+            }
+            context.makeWebSocketConnectionInterface = { address, delegate, delegateQueue in
+                guard let host = address.ip else {
+                    return nil
+                }
+                return NetworkWebSocketConnectionInterface(host: host, port: address.port, path: address.webSocketPath ?? "/apiws", delegate: delegate, delegateQueue: delegateQueue)
+            }
+            if webSocketTransport.isEnabled && webSocketTransport.currentUserDomain.isEmpty {
+                webSocketTransport.refreshRelayDomainsIfNeeded()
+            }
             
             let seedAddressList: [Int: [String]]
             
@@ -813,6 +834,9 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
     let basePath: String
     private let connectionStatusDelegate: MTProtoConnectionStatusDelegate
     private let useRequestTimeoutTimers: Bool
+    /// Rebuilds the transport schemes of datacenters 1...5 when the WebSocket endpoints change
+    /// (settings changed, pool refreshed, endpoints suppressed after repeated failures).
+    private var webSocketEndpointsObserver: NSObjectProtocol?
     public let useBetaFeatures: Bool
     public let useExperimentalFeatures: Bool
     
@@ -882,6 +906,10 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
         self.useExperimentalFeatures = useExperimentalFeatures
         
         super.init()
+
+        self.webSocketEndpointsObserver = NotificationCenter.default.addObserver(forName: NetworkWebSocketTransport.endpointsChangedNotification, object: nil, queue: nil, using: { [weak self] _ in
+            self?.refreshWebSocketTransportSchemes()
+        })
         
         self.requestService.didReceiveSoftAuthResetError = { [weak self] in
             self?.didReceiveSoftAuthResetError?()
@@ -973,7 +1001,18 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
         }))
     }
     
+    /// Re-announces the schemes of the datacenters that carry WebSocket endpoints, so their
+    /// transports are recreated from the current endpoint set.
+    func refreshWebSocketTransportSchemes() {
+        for datacenterId in 1 ... 5 {
+            self.context.refreshTransportSchemesForDatacenter(withId: datacenterId)
+        }
+    }
+    
     deinit {
+        if let webSocketEndpointsObserver = self.webSocketEndpointsObserver {
+            NotificationCenter.default.removeObserver(webSocketEndpointsObserver)
+        }
         self.shouldKeepConnectionDisposable.dispose()
         self.appDataDisposable.dispose()
     }
