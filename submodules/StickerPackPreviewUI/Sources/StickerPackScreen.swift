@@ -16,6 +16,7 @@ import TextFormat
 import PremiumUI
 import OverlayStatusController
 import PresentationDataUtils
+import StickerResources
 import StickerPeekUI
 import AnimationCache
 import MultiAnimationRenderer
@@ -174,6 +175,9 @@ private final class StickerPackContainer: ASDisplayNode {
     private(set) var currentStickerPack: (StickerPackCollectionInfo, [StickerPackItem], Bool)?
     private(set) var currentStickerPacks: [(StickerPackCollectionInfo, [StickerPackItem], Bool)] = []
     private var didReceiveStickerPackResult = false
+
+    private var myEmojiPacksDisposable: Disposable?
+    private var myEmojiPacks: [(StickerPackCollectionInfo, StickerPackItem?)] = []
     
     private let isReadyValue = Promise<Bool>()
     private var didSetReady = false
@@ -472,6 +476,7 @@ private final class StickerPackContainer: ASDisplayNode {
     
     deinit {
         self.itemsDisposable?.dispose()
+        self.myEmojiPacksDisposable?.dispose()
     }
     
     private var peekGestureRecognizer: PeekControllerGestureRecognizer?
@@ -842,16 +847,10 @@ private final class StickerPackContainer: ASDisplayNode {
             
             var menuItems: [ContextMenuItem] = []
             menuItems.removeAll()
-            
+
             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-            
-            var isLocked = false
-            if !hasPremium {
-                isLocked = file.isPremiumEmoji
-                /*if isLocked && chatPeerId == context.account.peerId {
-                    isLocked = false
-                }*/
-            }
+
+            let canSendEmoji = hasPremium || !file.isPremiumEmoji
             
             let sendEmoji: (TelegramMediaFile) -> Void = { file in
                 guard let self else {
@@ -918,8 +917,61 @@ private final class StickerPackContainer: ASDisplayNode {
                     storeMessageTextInPasteboard(text, entities: [MessageTextEntity(range: 0 ..< (text as NSString).length, type: .CustomEmoji(stickerPack: nil, fileId: file.fileId.id))])
                 }
             }
+            let addEmojiToPack: (TelegramMediaFile, StickerPackCollectionInfo) -> Void = { file, pack in
+                guard let self else {
+                    return
+                }
+                var emoji = "🙂"
+                loop: for attribute in file.attributes {
+                    if case let .CustomEmoji(_, _, displayText, _) = attribute, !displayText.isEmpty {
+                        emoji = displayText
+                        break loop
+                    }
+                }
+                let sticker = ImportSticker(
+                    resource: .standalone(resource: file.resource),
+                    emojis: [emoji],
+                    dimensions: file.dimensions ?? PixelDimensions(width: 512, height: 512),
+                    duration: file.duration,
+                    mimeType: file.mimeType,
+                    keywords: ""
+                )
+                let packReference: StickerPackReference = .id(id: pack.id.id, accessHash: pack.accessHash)
+                let _ = (self.context.engine.stickers.loadedStickerPack(reference: packReference, forceActualized: false)
+                |> deliverOnMainQueue).startStandalone(next: { loaded in
+                    var oldCount = -1
+                    if case let .result(_, items, _) = loaded {
+                        oldCount = items.count
+                    }
+                    let _ = (self.context.engine.stickers.addStickerToStickerSet(packReference: packReference, sticker: sticker)
+                    |> deliverOnMainQueue).start(error: { _ in
+                        guard let controller = self.controller else {
+                            return
+                        }
+                        controller.present(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: "Something went wrong. Please try again.", timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }), in: .window(.root))
+                    }, completed: {
+                        let _ = (self.context.engine.stickers.loadedStickerPack(reference: packReference, forceActualized: true, ignoreCache: true)
+                        |> deliverOnMainQueue).startStandalone(next: { reloaded in
+                            guard let controller = self.controller else {
+                                return
+                            }
+                            var newCount = -1
+                            if case let .result(_, items, _) = reloaded {
+                                newCount = items.count
+                            }
+                            let text = newCount > oldCount ? "Emoji added." : "This emoji is already in the set."
+                            controller.present(UndoOverlayController(presentationData: presentationData, content: .sticker(context: context, file: file, loop: true, title: nil, text: text, undoText: nil, customAction: nil), elevatedLayout: false, action: { _ in return false }), in: .window(.root))
+                        }, completed: {
+                            guard let controller = self.controller else {
+                                return
+                            }
+                            controller.present(UndoOverlayController(presentationData: presentationData, content: .sticker(context: context, file: file, loop: true, title: nil, text: "Emoji added.", undoText: nil, customAction: nil), elevatedLayout: false, action: { _ in return false }), in: .window(.root))
+                        })
+                    })
+                })
+            }
             
-            if strongSelf.sendEmoji != nil {
+            if strongSelf.sendEmoji != nil && canSendEmoji {
                 menuItems.append(.action(ContextMenuActionItem(text: presentationData.strings.EmojiPreview_SendEmoji, icon: { theme in
                     if let image = generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Download"), color: theme.actionSheet.primaryTextColor) {
                         return generateImage(image.size, rotatedContext: { size, context in
@@ -968,12 +1020,73 @@ private final class StickerPackContainer: ASDisplayNode {
                 copyEmoji(file)
                 f(.default)
             })))
+
+            var viewingOwnEmojiPack = false
+            for (info, _, _) in strongSelf.currentStickerPacks where info.id.namespace == Namespaces.ItemCollection.CloudEmojiPacks && info.flags.contains(.isCreator) {
+                viewingOwnEmojiPack = true
+            }
+            if let (info, _, _) = strongSelf.currentStickerPack, info.id.namespace == Namespaces.ItemCollection.CloudEmojiPacks && info.flags.contains(.isCreator) {
+                viewingOwnEmojiPack = true
+            }
+            if !viewingOwnEmojiPack, !strongSelf.myEmojiPacks.isEmpty {
+                menuItems.append(.action(ContextMenuActionItem(text: "Add to Emoji Set", icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/AddSticker"), color: theme.actionSheet.primaryTextColor)
+                }, action: { [weak self] c, f in
+                    guard let strongSelf = self, !strongSelf.myEmojiPacks.isEmpty else {
+                        f(.default)
+                        return
+                    }
+
+                    var contextItems: [ContextMenuItem] = []
+                    contextItems.append(.action(ContextMenuActionItem(text: presentationData.strings.Common_Back, icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Back"), color: theme.actionSheet.primaryTextColor)
+                    }, iconPosition: .left, action: { c, _ in
+                        c?.popItems()
+                    })))
+                    contextItems.append(.separator)
+
+                    for (pack, topItem) in strongSelf.myEmojiPacks {
+                        let thumbSize = CGSize(width: 24.0, height: 24.0)
+                        let topItemFile = topItem?.file._parse()
+                        let thumbnailResource = pack.thumbnail?.resource ?? topItemFile?.resource
+                        var thumbnailIconSource: ContextMenuActionItemIconSource?
+                        if let thumbnailResource {
+                            var resourceId: Int64 = 0
+                            if let resource = thumbnailResource as? CloudDocumentMediaResource {
+                                resourceId = resource.fileId
+                            }
+                            let thumbnailFile = topItemFile ?? TelegramMediaFile(fileId: EngineMedia.Id(namespace: Namespaces.Media.CloudFile, id: resourceId), partialReference: nil, resource: thumbnailResource, previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "image/webp", size: thumbnailResource.size ?? 0, attributes: [], alternativeRepresentations: [])
+
+                            let _ = freeMediaFileInteractiveFetched(account: context.account, userLocation: .other, fileReference: .stickerPack(stickerPack: .id(id: pack.id.id, accessHash: pack.accessHash), media: thumbnailFile)).start()
+                            thumbnailIconSource = ContextMenuActionItemIconSource(
+                                size: thumbSize,
+                                signal: chatMessageStickerPackThumbnail(postbox: context.account.postbox, resource: thumbnailResource)
+                                |> map { generator -> UIImage? in
+                                    return generator(TransformImageArguments(corners: ImageCorners(), imageSize: thumbSize, boundingSize: thumbSize, intrinsicInsets: .zero))?.generateImage()
+                                }
+                            )
+                        }
+                        contextItems.append(.action(ContextMenuActionItem(text: pack.title, textLayout: .singleLine, icon: { _ in nil }, iconSource: thumbnailIconSource, iconPosition: .left, action: { _, f in
+                            if pack.count >= 200 {
+                                if let controller = strongSelf.controller {
+                                    controller.present(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: "This Emoji Set is full.", timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }), in: .window(.root))
+                                }
+                                return
+                            }
+                            f(.default)
+                            addEmojiToPack(file, pack)
+                        })))
+                    }
+
+                    c?.pushItems(items: .single(ContextController.Items(content: .list(contextItems))))
+                })))
+            }
             
             if menuItems.isEmpty {
                 return nil
             }
             
-            let content = StickerPreviewPeekContent(context: context, theme: presentationData.theme, strings: presentationData.strings, item: .pack(file), isLocked: isLocked, menu: menuItems, openPremiumIntro: { [weak self] in
+            let content = StickerPreviewPeekContent(context: context, theme: presentationData.theme, strings: presentationData.strings, item: .pack(file), isLocked: false, menu: menuItems, openPremiumIntro: { [weak self] in
                 guard let strongSelf = self else {
                     return
                 }
@@ -1582,6 +1695,20 @@ private final class StickerPackContainer: ASDisplayNode {
     private func updateStickerPackContents(_ contents: [LoadedStickerPack], hasPremium: Bool) {
         self.currentContents = contents
         self.didReceiveStickerPackResult = true
+
+        if self.myEmojiPacksDisposable == nil {
+            for content in contents {
+                if case let .result(info, _, _) = content, info._parse().id.namespace == Namespaces.ItemCollection.CloudEmojiPacks {
+                    self.myEmojiPacksDisposable = (self.context.engine.stickers.getMyStickerSets()
+                    |> deliverOnMainQueue).start(next: { [weak self] packs in
+                        if let strongSelf = self {
+                            strongSelf.myEmojiPacks = packs.filter { $0.0.flags.contains(.isEmoji) }
+                        }
+                    })
+                    break
+                }
+            }
+        }
         
         var entries: [StickerPackPreviewGridEntry] = []
         
