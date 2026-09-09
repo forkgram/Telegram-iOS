@@ -16622,6 +16622,13 @@ Error: %8$@";
 "HiddenAccounts.StealthModeRequiresNoPasscode" = "Stealth Mode is only for when the app has no passcode. With a passcode set, unlock hidden accounts from the passcode screen.";
 "HiddenAccounts.DisableStealthNeedsPasscode" = "Turning off Stealth Mode would leave your hidden accounts with no way to unlock. Make them visible first, or set an app passcode.";
 
+"Login.QrLoginAction" = "Log in by QR Code";
+"Login.QrTitle" = "Log in by QR Code";
+"Login.QrSubtitle" = "Scan this code with a device where you are already logged in to Telegram.";
+"Login.QrStep1" = "Open **Telegram** on your other device";
+"Login.QrStep2" = "Go to **Settings** > **Devices** > **Link Desktop Device**";
+"Login.QrStep3" = "Point that device at this screen to confirm login";
+"Login.QrUsePhoneNumber" = "Or log in using your phone number";
 "HiddenAccounts.SetAppPasscode" = "Set App Passcode";
 "HiddenAccounts.CodeType4Digits" = "4 digits";
 "HiddenAccounts.CodeType6Digits" = "6 digits";

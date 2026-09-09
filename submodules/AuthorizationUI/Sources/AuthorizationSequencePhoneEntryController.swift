@@ -57,6 +57,7 @@ public final class AuthorizationSequencePhoneEntryController: ViewController, MF
     public var loginWithNumber: ((String, Bool) -> Void)?
     public var loginWithPasskey: ((AuthorizationPasskeyData, Bool) -> Void)?
     var accountUpdated: ((UnauthorizedAccount) -> Void)?
+    public var loginWithQr: (() -> Void)?
     
     weak var confirmationController: PhoneConfirmationController?
     
@@ -188,6 +189,10 @@ public final class AuthorizationSequencePhoneEntryController: ViewController, MF
         }
         self.controllerNode.checkPhone = { [weak self] in
             self?.nextPressed()
+        }
+        
+        self.controllerNode.loginWithQr = { [weak self] in
+            self?.loginWithQr?()
         }
         
         if let account = self.account {

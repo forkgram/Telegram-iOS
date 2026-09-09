@@ -319,11 +319,10 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
     private let phoneAndCountryNode: PhoneAndCountryNode
     private let contactSyncNode: ContactSyncNode
     private let proceedNode: SolidRoundedButtonNode
+    private let qrLoginNode: HighlightableButtonNode
     
-    private var qrNode: ASImageNode?
-    private let exportTokenDisposable = MetaDisposable()
-    private let tokenEventsDisposable = MetaDisposable()
     var accountUpdated: ((UnauthorizedAccount) -> Void)?
+    var loginWithQr: (() -> Void)?
     
     var retryPasskey: (() -> Void)?
     
@@ -428,6 +427,10 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
         self.proceedNode.progressType = .embedded
         self.proceedNode.isEnabled = false
         self.proceedNode.accessibilityIdentifier = "Auth.PhoneEntry.ContinueButton"
+        
+        self.qrLoginNode = HighlightableButtonNode()
+        self.qrLoginNode.setTitle(strings.Login_QrLoginAction, with: Font.regular(17.0), with: theme.list.itemAccentColor, for: .normal)
+        self.qrLoginNode.accessibilityIdentifier = "Auth.PhoneEntry.QrLoginButton"
 
         super.init()
         
@@ -444,6 +447,7 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
         self.addSubnode(self.phoneAndCountryNode)
         self.addSubnode(self.contactSyncNode)
         self.addSubnode(self.proceedNode)
+        self.addSubnode(self.qrLoginNode)
         self.addSubnode(self.animationNode)
         self.addSubnode(self.managedAnimationNode)
         self.contactSyncNode.isHidden = true
@@ -480,16 +484,11 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
             }
         }
         
-        if let account = account {
-            self.tokenEventsDisposable.set((account.updateLoginTokenEvents
-            |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
-                self?.refreshQrToken()
-            }))
-        }
-        
         self.proceedNode.pressed = { [weak self] in
             self?.checkPhone?()
         }
+        
+        self.qrLoginNode.addTarget(self, action: #selector(self.qrLoginPressed), forControlEvents: .touchUpInside)
         
         self.animationNode.completed = { [weak self] _ in
             self?.animationNode.removeFromSupernode()
@@ -497,18 +496,11 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
         }
     }
     
-    deinit {
-        self.exportTokenDisposable.dispose()
-        self.tokenEventsDisposable.dispose()
-    }
     
     override func didLoad() {
         super.didLoad()
         
         self.titleNode.view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(self.debugTap(_:))))
-        #if DEBUG && false
-        self.noticeNode.view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(self.debugQrTap(_:))))
-        #endif
     }
     
     private var animationSnapshotView: UIView?
@@ -649,14 +641,18 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
             self.contactSyncNode.isHidden = true
         }
         
+        let qrLoginHeight: CGFloat = 44.0
         let buttonFrame: CGRect
         if let forcedButtonFrame = self.forcedButtonFrame, (layout.inputHeight ?? 0.0).isZero {
             buttonFrame = forcedButtonFrame
         } else {
-            buttonFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((layout.size.width - proceedSize.width) / 2.0), y: layout.size.height - insets.bottom - proceedSize.height - inset), size: proceedSize)
+            buttonFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((layout.size.width - proceedSize.width) / 2.0), y: layout.size.height - insets.bottom - proceedSize.height - inset - qrLoginHeight), size: proceedSize)
         }
         
         transition.updateFrame(node: self.proceedNode, frame: buttonFrame)
+        
+        self.qrLoginNode.isHidden = self.proceedNode.isHidden
+        transition.updateFrame(node: self.qrLoginNode, frame: CGRect(origin: CGPoint(x: buttonFrame.minX, y: buttonFrame.maxY), size: CGSize(width: buttonFrame.width, height: qrLoginHeight)))
         
         self.animationNode.updateLayout(size: animationSize)
         
@@ -667,6 +663,10 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
         self.titleActivateAreaNode.frame = self.titleNode.frame
         self.noticeActivateAreaNode.accessibilityLabel = self.noticeNode.attributedText?.string ?? ""
         self.noticeActivateAreaNode.frame = self.noticeNode.frame
+    }
+    
+    @objc private func qrLoginPressed() {
+        self.loginWithQr?()
     }
     
     func activateInput() {
@@ -700,83 +700,6 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
         }
     }
     
-    @objc private func debugQrTap(_ recognizer: UITapGestureRecognizer) {
-        if self.qrNode == nil {
-            let qrNode = ASImageNode()
-            qrNode.frame = CGRect(origin: CGPoint(x: 16.0, y: 64.0 + 16.0), size: CGSize(width: 200.0, height: 200.0))
-            self.qrNode = qrNode
-            self.addSubnode(qrNode)
-            
-            self.refreshQrToken()
-        }
-    }
-    
-    private func refreshQrToken() {
-        guard let account = self.account else {
-            return
-        }
-        let sharedContext = self.sharedContext
-        let tokenSignal = sharedContext.activeAccountContexts
-        |> castError(ExportAuthTransferTokenError.self)
-        |> take(1)
-        |> mapToSignal { activeAccountsAndInfo -> Signal<ExportAuthTransferTokenResult, ExportAuthTransferTokenError> in
-            let (_, activeAccounts, _) = activeAccountsAndInfo
-            let activeProductionUserIds = activeAccounts.map({ $0.1.account }).filter({ !$0.testingEnvironment }).map({ $0.peerId.id })
-            let activeTestingUserIds = activeAccounts.map({ $0.1.account }).filter({ $0.testingEnvironment }).map({ $0.peerId.id })
-            
-            let allProductionUserIds = activeProductionUserIds
-            let allTestingUserIds = activeTestingUserIds
-            
-            return TelegramEngineUnauthorized(account: account).auth.exportAuthTransferToken(accountManager: sharedContext.accountManager, otherAccountUserIds: account.testingEnvironment ? allTestingUserIds : allProductionUserIds, syncContacts: true)
-        }
-        
-        self.exportTokenDisposable.set((tokenSignal
-        |> deliverOnMainQueue).startStrict(next: { [weak self] result in
-            guard let strongSelf = self else {
-                return
-            }
-            switch result {
-            case let .displayToken(token):
-                var tokenString = token.value.base64EncodedString()
-                //print("export token \(tokenString)")
-                tokenString = tokenString.replacingOccurrences(of: "+", with: "-")
-                tokenString = tokenString.replacingOccurrences(of: "/", with: "_")
-                let urlString = "tg://login?token=\(tokenString)"
-                let _ = (qrCode(string: urlString, color: .black, backgroundColor: .white, icon: .none)
-                |> deliverOnMainQueue).startStandalone(next: { _, generate in
-                    guard let strongSelf = self else {
-                        return
-                    }
-                    
-                    let context = generate(TransformImageArguments(corners: ImageCorners(), imageSize: CGSize(width: 200.0, height: 200.0), boundingSize: CGSize(width: 200.0, height: 200.0), intrinsicInsets: UIEdgeInsets()))
-                    if let image = context?.generateImage() {
-                        strongSelf.qrNode?.image = image
-                    }
-                })
-                
-                let timestamp = Int32(Date().timeIntervalSince1970)
-                let timeout = max(5, token.validUntil - timestamp)
-                strongSelf.exportTokenDisposable.set((Signal<Never, NoError>.complete()
-                |> delay(Double(timeout), queue: .mainQueue())).startStrict(completed: {
-                    guard let strongSelf = self else {
-                        return
-                    }
-                    strongSelf.refreshQrToken()
-                }))
-            case let .changeAccountAndRetry(account):
-                strongSelf.exportTokenDisposable.set(nil)
-                strongSelf.account = account
-                strongSelf.accountUpdated?(account)
-                strongSelf.tokenEventsDisposable.set((account.updateLoginTokenEvents
-                |> deliverOnMainQueue).startStrict(next: { _ in
-                    self?.refreshQrToken()
-                }))
-                strongSelf.refreshQrToken()
-            case .loggedIn, .passwordRequested:
-                strongSelf.exportTokenDisposable.set(nil)
-            }
-        }))
-    }
 }
 
 final class PhoneConfirmationController: ViewController {

@@ -194,6 +194,9 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
                 strongSelf.account = updatedAccount
                 strongSelf.inAppPurchaseManager = InAppPurchaseManager(engine: .unauthorized(strongSelf.engine))
             }
+            controller.loginWithQr = { [weak self] in
+                self?.pushQrLoginController()
+            }
             controller.loginWithNumber = { [weak self, weak controller] number, syncContacts in
                 guard let self else {
                     return
@@ -360,6 +363,23 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
         }
         controller.updateData(countryCode: countryCode, countryName: nil, number: number)
         return controller
+    }
+    
+    private func pushQrLoginController() {
+        let controller = AuthorizationSequenceQrLoginController(sharedContext: self.sharedContext, account: self.account, presentationData: self.presentationData, back: { [weak self] in
+            self?.popViewController(animated: true)
+        })
+        controller.accountUpdated = { [weak self] updatedAccount in
+            guard let strongSelf = self else {
+                return
+            }
+            strongSelf.account = updatedAccount
+            strongSelf.inAppPurchaseManager = InAppPurchaseManager(engine: .unauthorized(strongSelf.engine))
+        }
+        controller.loginWithPhone = { [weak self] in
+            self?.popViewController(animated: true)
+        }
+        self.pushViewController(controller)
     }
     
     private func codeEntryController(number: String, phoneCodeHash: String, email: String?, type: SentAuthorizationCodeType, nextType: AuthorizationCodeNextType?, timeout: Int32?, previousCodeType: SentAuthorizationCodeType?, isPrevious: Bool, termsOfService: (UnauthorizedAccountTermsOfService, Bool)?) -> AuthorizationSequenceCodeEntryController {
