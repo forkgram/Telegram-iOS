@@ -21,6 +21,7 @@ swift_library(
         "//submodules/ImageBlur:ImageBlur",
         "//submodules/AccountContext:AccountContext",
         "//submodules/AppLockState:AppLockState",
+        "//submodules/HiddenAccounts:HiddenAccounts",
     ],
     visibility = [
         "//visibility:public",

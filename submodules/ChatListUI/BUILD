@@ -18,6 +18,7 @@ swift_library(
         "//submodules/TelegramPresentationData:TelegramPresentationData",
         "//submodules/TelegramUIPreferences:TelegramUIPreferences",
         "//submodules/AccountContext:AccountContext",
+        "//submodules/HiddenAccounts:HiddenAccounts",
         "//submodules/TelegramBaseController:TelegramBaseController",
         "//submodules/OverlayStatusController:OverlayStatusController",
         "//submodules/AlertUI:AlertUI",

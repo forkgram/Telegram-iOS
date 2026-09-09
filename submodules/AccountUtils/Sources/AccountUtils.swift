@@ -3,14 +3,18 @@ import SwiftSignalKit
 import TelegramCore
 import TelegramUIPreferences
 import AccountContext
+import HiddenAccounts
 
 public let maximumNumberOfAccounts = 3
 public let maximumPremiumNumberOfAccounts = 4
 
-public func activeAccountsAndPeers(context: AccountContext, includePrimary: Bool = false) -> Signal<((AccountContext, EnginePeer)?, [(AccountContext, EnginePeer, Int32)]), NoError> {
+public func activeAccountsAndPeers(context: AccountContext, includePrimary: Bool = false, includeHidden: Bool = false) -> Signal<((AccountContext, EnginePeer)?, [(AccountContext, EnginePeer, Int32)]), NoError> {
     let sharedContext = context.sharedContext
-    return context.sharedContext.activeAccountContexts
-    |> mapToSignal { primary, activeAccounts, _ -> Signal<((AccountContext, EnginePeer)?, [(AccountContext, EnginePeer, Int32)]), NoError> in
+    let hiddenAccounts = sharedContext.appLockContext.hiddenAccounts
+    return combineLatest(context.sharedContext.activeAccountContexts, hiddenAccounts.visibilityUpdated)
+    |> mapToSignal { activeAccountContexts, _ -> Signal<((AccountContext, EnginePeer)?, [(AccountContext, EnginePeer, Int32)]), NoError> in
+        let primary = activeAccountContexts.primary
+        let activeAccounts = includeHidden ? activeAccountContexts.accounts : activeAccountContexts.accounts.filter { hiddenAccounts.isVisible(accountId: $0.0) }
         var accounts: [Signal<(AccountContext, EnginePeer, Int32)?, NoError>] = []
         func accountWithPeer(_ context: AccountContext) -> Signal<(AccountContext, EnginePeer, Int32)?, NoError> {
             return combineLatest(context.account.postbox.peerView(id: context.account.peerId), renderedTotalUnreadCount(accountManager: sharedContext.accountManager, engine: context.engine))

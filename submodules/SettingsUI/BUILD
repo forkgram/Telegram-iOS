@@ -51,6 +51,7 @@ swift_library(
         "//submodules/PasswordSetupUI:PasswordSetupUI",
         "//submodules/PassportUI:PassportUI",
         "//submodules/PasscodeUI:PasscodeUI",
+        "//submodules/HiddenAccounts:HiddenAccounts",
         "//submodules/PeerAvatarGalleryUI:PeerAvatarGalleryUI",
         "//submodules/PhoneInputNode:PhoneInputNode",
         "//submodules/PhotoResources:PhotoResources",

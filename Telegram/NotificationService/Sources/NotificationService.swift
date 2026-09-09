@@ -848,6 +848,7 @@ private final class NotificationServiceHandler {
                 ApplicationSpecificSharedDataKeys.inAppNotificationSettings,
                 ApplicationSpecificSharedDataKeys.voiceCallSettings,
                 ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings,
+                ApplicationSpecificSharedDataKeys.hiddenAccountsSettings,
                 SharedDataKeys.loggingSettings
             ])
         )
@@ -891,6 +892,17 @@ private final class NotificationServiceHandler {
 
             guard let strongSelf = self, let recordId = recordId else {
                 Logger.shared.log("NotificationService \(episode)", "Couldn't find a matching decryption key")
+
+                let content = NotificationContent(isLockedMessage: nil)
+                updateCurrentContent(content)
+                completed()
+
+                return
+            }
+            
+            let hiddenAccountsSettings = sharedData.entries[ApplicationSpecificSharedDataKeys.hiddenAccountsSettings]?.get(HiddenAccountsSettings.self) ?? HiddenAccountsSettings.defaultSettings
+            if hiddenAccountsSettings.isHidden(accountId: recordId.int64) {
+                Logger.shared.log("NotificationService \(episode)", "Suppressing notification for hidden account \(recordId.int64)")
 
                 let content = NotificationContent(isLockedMessage: nil)
                 updateCurrentContent(content)

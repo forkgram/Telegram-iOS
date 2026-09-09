@@ -14,6 +14,7 @@ import AnimationCache
 import MultiAnimationRenderer
 import Photos
 import TextFormat
+import HiddenAccounts
 
 public final class TelegramApplicationOpenUrlCompletion {
     public let completion: (Bool) -> Void
@@ -907,6 +908,7 @@ public enum CreateGroupMode {
 public protocol AppLockContext: AnyObject {
     var invalidAttempts: Signal<AccessChallengeAttempts?, NoError> { get }
     var autolockDeadline: Signal<Int32?, NoError> { get }
+    var hiddenAccounts: HiddenAccountsManager { get }
     
     func lock()
     func unlock()

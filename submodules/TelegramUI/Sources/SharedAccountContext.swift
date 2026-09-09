@@ -10,6 +10,7 @@ import TelegramCallsUI
 import TelegramUIPreferences
 import TelegramStringFormatting
 import AccountContext
+import HiddenAccounts
 import DeviceLocationManager
 import ItemListUI
 import LegacyUI
@@ -190,6 +191,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     }
     
     private let registeredNotificationTokensDisposable = MetaDisposable()
+    private let hiddenAccountsDisposable = MetaDisposable()
+    private var hiddenAccountsObservedPrimaryId: AccountRecordId?
     
     public let mediaManager: MediaManager
     public let contactDataManager: DeviceContactDataManager?
@@ -806,8 +809,12 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }))
         })
         
-        self.activeAccountsWithInfoPromise.set(self.activeAccountContexts
-        |> mapToSignal { primary, accounts, _ -> Signal<(primary: AccountRecordId?, accounts: [AccountWithInfo]), NoError> in
+        let hiddenAccounts = appLockContext.hiddenAccounts
+        
+        self.activeAccountsWithInfoPromise.set(combineLatest(self.activeAccountContexts, hiddenAccounts.visibilityUpdated)
+        |> mapToSignal { activeAccounts, _ -> Signal<(primary: AccountRecordId?, accounts: [AccountWithInfo]), NoError> in
+            let (primary, allAccounts, _) = activeAccounts
+            let accounts = allAccounts.filter { hiddenAccounts.isVisible(accountId: $0.0) }
             return combineLatest(accounts.map { _, context, _ -> Signal<AccountWithInfo?, NoError> in
                 return context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
                 |> map { peer -> AccountWithInfo? in
@@ -828,6 +835,16 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 return (primary?.account.id, accountsWithInfoResult)
             }
         })
+        
+        if applicationBindings.isMainApp {
+            self.hiddenAccountsDisposable.set((combineLatest(queue: .mainQueue(),
+                self.activeAccountContexts,
+                hiddenAccounts.visibilityUpdated
+            )
+            |> deliverOnMainQueue).startStrict(next: { [weak self] activeAccounts, _ in
+                self?.reconcileHiddenAccountVisibility(activeAccounts: activeAccounts)
+            }))
+        }
         
         if let mainWindow = mainWindow, applicationBindings.isMainApp {
             let callManager = PresentationCallManagerImpl(accountManager: self.accountManager, getDeviceAccessData: {
@@ -1102,6 +1119,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     deinit {
         assertionFailure("SharedAccountContextImpl is not supposed to be deallocated")
         self.registeredNotificationTokensDisposable.dispose()
+        self.hiddenAccountsDisposable.dispose()
         self.presentationDataDisposable.dispose()
         self.automaticMediaDownloadSettingsDisposable.dispose()
         self.currentAutodownloadSettingsDisposable.dispose()
@@ -1761,8 +1779,36 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         }).start()
     }
     
+    private func reconcileHiddenAccountVisibility(activeAccounts: (primary: AccountContext?, accounts: [(AccountRecordId, AccountContext, Int32)], currentAuth: UnauthorizedAccount?)) {
+        let hiddenAccounts = self.appLockContext.hiddenAccounts
+        let primaryId = activeAccounts.primary?.account.id
+        
+        if let primaryId, primaryId != self.hiddenAccountsObservedPrimaryId {
+            self.hiddenAccountsObservedPrimaryId = primaryId
+            hiddenAccounts.accountBecamePrimary(primaryId)
+        }
+        
+        if let unlockedAccountId = hiddenAccounts.currentUnlockedAccountId, unlockedAccountId != primaryId {
+            if activeAccounts.accounts.contains(where: { $0.0 == unlockedAccountId }) {
+                self.switchToAccount(id: unlockedAccountId)
+            }
+            return
+        }
+        
+        guard let primaryId, !hiddenAccounts.isVisible(accountId: primaryId) else {
+            return
+        }
+        guard let fallbackId = activeAccounts.accounts.first(where: { hiddenAccounts.isVisible(accountId: $0.0) })?.0 else {
+            return
+        }
+        self.switchToAccount(id: fallbackId)
+    }
+    
     public func switchToAccount(id: AccountRecordId, fromSettingsController settingsController: ViewController? = nil, withChatListController chatListController: ViewController? = nil) {
         if self.activeAccountsValue?.primary?.account.id == id {
+            return
+        }
+        if !self.appLockContext.hiddenAccounts.isVisible(accountId: id) {
             return
         }
         

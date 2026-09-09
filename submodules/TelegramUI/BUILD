@@ -209,6 +209,7 @@ swift_library(
         "//submodules/OpenSSLEncryptionProvider:OpenSSLEncryptionProvider",
         "//submodules/PhoneNumberFormat:PhoneNumberFormat",
         "//submodules/AppLock:AppLock",
+        "//submodules/HiddenAccounts:HiddenAccounts",
         "//submodules/NotificationsPresentationData:NotificationsPresentationData",
         "//submodules/UrlWhitelist:UrlWhitelist",
         "//submodules/TelegramIntents:TelegramIntents",

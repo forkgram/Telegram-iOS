@@ -23,6 +23,7 @@ swift_library(
         "//submodules/Utils/RangeSet:RangeSet",
         "//submodules/InAppPurchaseManager:InAppPurchaseManager",
         "//submodules/TextFormat:TextFormat",
+        "//submodules/HiddenAccounts:HiddenAccounts",
         "//submodules/TelegramUI/Components/AnimationCache:AnimationCache",
         "//submodules/TelegramUI/Components/MultiAnimationRenderer:MultiAnimationRenderer",
         "//submodules/TelegramCore/FlatBuffers",

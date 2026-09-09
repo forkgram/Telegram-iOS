@@ -23,6 +23,9 @@ public final class PasscodeSetupController: ViewController {
     public var complete: ((String, Bool) -> Void)?
     public var check: ((String) -> Bool)?
     
+    public var allowsPasscodeTypeSelection: Bool = true
+    public var titleOverride: String?
+    
     private let hapticFeedback = HapticFeedback()
     
     private var presentationData: PresentationData
@@ -49,7 +52,7 @@ public final class PasscodeSetupController: ViewController {
     }
     
     override public func loadDisplayNode() {
-        self.displayNode = PasscodeSetupControllerNode(presentationData: self.presentationData, mode: self.mode)
+        self.displayNode = PasscodeSetupControllerNode(presentationData: self.presentationData, mode: self.mode, allowsPasscodeTypeSelection: self.allowsPasscodeTypeSelection, titleOverride: self.titleOverride)
         self.displayNodeDidLoad()
         
         self.navigationBar?.updateBackgroundAlpha(0.0, transition: .immediate)

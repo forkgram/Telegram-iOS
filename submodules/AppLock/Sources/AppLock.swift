@@ -12,6 +12,7 @@ import ImageBlur
 import FastBlur
 import AppLockState
 import PassKit
+import HiddenAccounts
 
 private func isLocked(passcodeSettings: PresentationPasscodeSettings, state: LockState, isApplicationActive: Bool) -> Bool {
     if state.isManuallyLocked {
@@ -71,6 +72,9 @@ public final class AppLockContextImpl: AppLockContext {
     
     private var disposable: Disposable?
     private var autolockTimeoutDisposable: Disposable?
+    private var foregroundDisposable: Disposable?
+
+    public let hiddenAccounts: HiddenAccountsManager
     
     private let applicationBindings: TelegramApplicationBindings
     private let accountManager: AccountManager<TelegramAccountManagerTypes>
@@ -97,6 +101,7 @@ public final class AppLockContextImpl: AppLockContext {
     
     private var lastActiveTimestamp: Double?
     private var lastActiveValue: Bool = false
+    private var wasCurrentlyLocked: Bool = false
     
     public init(rootPath: String, window: Window1?, rootController: UIViewController?, applicationBindings: TelegramApplicationBindings, accountManager: AccountManager<TelegramAccountManagerTypes>, presentationDataSignal: Signal<PresentationData, NoError>, lockIconInitialFrame: @escaping () -> CGRect?) {
         assert(Queue.mainQueue().isCurrent())
@@ -107,6 +112,7 @@ public final class AppLockContextImpl: AppLockContext {
         self.rootPath = rootPath
         self.window = window
         self.rootController = rootController
+        self.hiddenAccounts = HiddenAccountsManager(accountManager: accountManager)
         
         if let data = try? Data(contentsOf: URL(fileURLWithPath: appLockStatePath(rootPath: self.rootPath))), let current = try? JSONDecoder().decode(LockState.self, from: data) {
             self.currentStateValue = current
@@ -229,6 +235,11 @@ public final class AppLockContextImpl: AppLockContext {
                 }
             }
             
+            if isCurrentlyLocked && !strongSelf.wasCurrentlyLocked {
+                strongSelf.hiddenAccounts.clearUnlockedAccount()
+            }
+            strongSelf.wasCurrentlyLocked = isCurrentlyLocked
+            
             strongSelf.updateTimestampRenewTimer(shouldRun: appInForeground && !isCurrentlyLocked)
             strongSelf.isCurrentlyLockedPromise.set(.single(!appInForeground || isCurrentlyLocked))
             
@@ -255,6 +266,14 @@ public final class AppLockContextImpl: AppLockContext {
             }
         })
         
+        self.foregroundDisposable = (applicationBindings.applicationInForeground
+        |> distinctUntilChanged
+        |> deliverOnMainQueue).startStrict(next: { [weak self] inForeground in
+            if !inForeground {
+                self?.hiddenAccounts.clearUnlockedAccount()
+            }
+        })
+        
         self.currentState.set(.single(self.currentStateValue))
         
         self.autolockTimeoutDisposable = (self.autolockTimeout.get()
@@ -270,6 +289,7 @@ public final class AppLockContextImpl: AppLockContext {
     deinit {
         self.disposable?.dispose()
         self.autolockTimeoutDisposable?.dispose()
+        self.foregroundDisposable?.dispose()
     }
     
     private func updateTimestampRenewTimer(shouldRun: Bool) {
@@ -343,6 +363,7 @@ public final class AppLockContextImpl: AppLockContext {
     }
     
     public func lock() {
+        self.hiddenAccounts.clearUnlockedAccount()
         self.updateLockState { state in
             var state = state
             state.isManuallyLocked = true
@@ -351,6 +372,8 @@ public final class AppLockContextImpl: AppLockContext {
     }
     
     public func unlock() {
+        let _ = self.hiddenAccounts.consumePendingUnlock()
+        
         self.updateLockState { state in
             var state = state
             

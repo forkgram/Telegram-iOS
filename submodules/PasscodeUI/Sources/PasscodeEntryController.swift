@@ -7,6 +7,7 @@ import TelegramCore
 import TelegramPresentationData
 import TelegramUIPreferences
 import AccountContext
+import HiddenAccounts
 import LocalAuth
 import TelegramStringFormatting
 
@@ -153,6 +154,10 @@ public final class PasscodeEntryController: ViewController {
                     succeed = passcode == normalizeArabicNumeralString(code, type: .western)
                 case let .plaintextPassword(code):
                     succeed = passcode == code
+            }
+            
+            if !succeed, strongSelf.completed == nil, strongSelf.appLockContext.hiddenAccounts.prepareUnlockFromPasscode(code: passcode) {
+                succeed = true
             }
             
             if succeed {

@@ -8,6 +8,7 @@ import TelegramPresentationData
 import TelegramUIPreferences
 import MergeLists
 import AccountContext
+import HiddenAccounts
 import SearchUI
 import ContactsPeerItem
 import ChatListSearchItemHeader
@@ -710,6 +711,11 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
     }
     
     override public func searchTextUpdated(text: String) {
+        if let unlockedAccountId = self.context.sharedContext.appLockContext.hiddenAccounts.tryUnlockFromSearch(query: text) {
+            self.context.sharedContext.switchToAccount(id: unlockedAccountId, fromSettingsController: nil, withChatListController: nil)
+            return
+        }
+        
         let searchQuery: String? = !text.isEmpty ? text : nil
 
         if !text.hasPrefix("#") && self.paneContainerNode.currentPaneKey == .publicPosts {
