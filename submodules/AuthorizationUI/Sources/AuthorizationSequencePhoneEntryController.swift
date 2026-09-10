@@ -318,10 +318,26 @@ public final class AuthorizationSequencePhoneEntryController: ViewController, MF
     }
     
     public func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-        guard let windowScene = self.view.window?.windowScene else {
-            preconditionFailure()
+        if let windowScene = self.view.window?.windowScene {
+            return ASPresentationAnchor(windowScene: windowScene)
         }
-        return ASPresentationAnchor(windowScene: windowScene)
+        var fallbackScene: UIWindowScene?
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else {
+                continue
+            }
+            if windowScene.activationState == .foregroundActive {
+                fallbackScene = windowScene
+                break
+            }
+            if fallbackScene == nil {
+                fallbackScene = windowScene
+            }
+        }
+        if let fallbackScene {
+            return ASPresentationAnchor(windowScene: fallbackScene)
+        }
+        return ASPresentationAnchor(frame: CGRect())
     }
     
     public func updateCountryCode() {
