@@ -16632,6 +16632,8 @@ Error: %8$@";
 
 "VideoMessage.RememberCamera" = "Remember Camera";
 
+"Login.TestServer" = "Test Server";
+
 "FastForward.Title" = "Fast Forward";
 "FastForward.SendWithoutSenderName" = "Send without Sender Name";
 "FastForward.SendWithoutText" = "Send without Text";

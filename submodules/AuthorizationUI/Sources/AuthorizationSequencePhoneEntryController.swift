@@ -58,6 +58,7 @@ public final class AuthorizationSequencePhoneEntryController: ViewController, MF
     public var loginWithPasskey: ((AuthorizationPasskeyData, Bool) -> Void)?
     var accountUpdated: ((UnauthorizedAccount) -> Void)?
     public var loginWithQr: (() -> Void)?
+    public var updateTestingEnvironment: ((Bool) -> Void)?
     
     weak var confirmationController: PhoneConfirmationController?
     
@@ -150,7 +151,10 @@ public final class AuthorizationSequencePhoneEntryController: ViewController, MF
             }
             strongSelf.view.endEditing(true)
             self?.present(debugController(sharedContext: strongSelf.sharedContext, context: nil, modal: true), in: .window(.root), with: ViewControllerPresentationArguments(presentationAnimation: .modalSheet))
-        }, hasOtherAccounts: self.otherAccountPhoneNumbers.0 != nil)
+        }, hasOtherAccounts: self.otherAccountPhoneNumbers.0 != nil, isTestingEnvironment: self.isTestingEnvironment)
+        self.controllerNode.updateTestingEnvironment = { [weak self] value in
+            self?.updateTestingEnvironment?(value)
+        }
         self.controllerNode.accountUpdated = { [weak self] account in
             guard let strongSelf = self else {
                 return

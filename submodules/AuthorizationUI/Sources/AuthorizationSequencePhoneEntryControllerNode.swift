@@ -265,14 +265,14 @@ private final class PhoneAndCountryNode: ASDisplayNode {
     }
 }
 
-private final class ContactSyncNode: ASDisplayNode {
+private final class AuthorizationSwitchItemNode: ASDisplayNode {
     private let titleNode: ImmediateTextNode
     let switchNode: SwitchNode
     
-    init(theme: PresentationTheme, strings: PresentationStrings) {
+    init(theme: PresentationTheme, title: String) {
         self.titleNode = ImmediateTextNode()
         self.titleNode.maximumNumberOfLines = 1
-        self.titleNode.attributedText = NSAttributedString(string: strings.Privacy_ContactsSync, font: Font.regular(17.0), textColor: theme.list.itemPrimaryTextColor)
+        self.titleNode.attributedText = NSAttributedString(string: title, font: Font.regular(17.0), textColor: theme.list.itemPrimaryTextColor)
         self.switchNode = SwitchNode()
         self.switchNode.frameColor = theme.list.itemSwitchColors.frameColor
         self.switchNode.contentColor = theme.list.itemSwitchColors.contentColor
@@ -317,7 +317,8 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
     private let noticeNode: ImmediateTextNode
     private let noticeActivateAreaNode: AccessibilityAreaNode
     private let phoneAndCountryNode: PhoneAndCountryNode
-    private let contactSyncNode: ContactSyncNode
+    private let contactSyncNode: AuthorizationSwitchItemNode
+    private let testServerNode: AuthorizationSwitchItemNode
     private let proceedNode: SolidRoundedButtonNode
     private let qrLoginNode: HighlightableButtonNode
     
@@ -356,6 +357,7 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
     
     var selectCountryCode: (() -> Void)?
     var checkPhone: (() -> Void)?
+    var updateTestingEnvironment: ((Bool) -> Void)?
     
     var inProgress: Bool = false {
         didSet {
@@ -385,7 +387,7 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
         return self.proceedNode
     }
     
-    init(sharedContext: SharedAccountContext, account: UnauthorizedAccount?, strings: PresentationStrings, theme: PresentationTheme, debugAction: @escaping () -> Void, hasOtherAccounts: Bool) {
+    init(sharedContext: SharedAccountContext, account: UnauthorizedAccount?, strings: PresentationStrings, theme: PresentationTheme, debugAction: @escaping () -> Void, hasOtherAccounts: Bool, isTestingEnvironment: Bool) {
         self.sharedContext = sharedContext
         self.account = account
         
@@ -419,7 +421,10 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
         
         self.noticeNode.attributedText = NSAttributedString(string: account == nil ? strings.ChangePhoneNumberNumber_Help : strings.Login_PhoneAndCountryHelp, font: Font.regular(17.0), textColor: theme.list.itemPrimaryTextColor, paragraphAlignment: .center)
         
-        self.contactSyncNode = ContactSyncNode(theme: theme, strings: strings)
+        self.contactSyncNode = AuthorizationSwitchItemNode(theme: theme, title: strings.Privacy_ContactsSync)
+        
+        self.testServerNode = AuthorizationSwitchItemNode(theme: theme, title: strings.Login_TestServer)
+        self.testServerNode.switchNode.isOn = isTestingEnvironment
         
         self.phoneAndCountryNode = PhoneAndCountryNode(strings: strings, theme: theme)
         
@@ -446,11 +451,17 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
         self.addSubnode(self.noticeActivateAreaNode)
         self.addSubnode(self.phoneAndCountryNode)
         self.addSubnode(self.contactSyncNode)
+        self.addSubnode(self.testServerNode)
         self.addSubnode(self.proceedNode)
         self.addSubnode(self.qrLoginNode)
         self.addSubnode(self.animationNode)
         self.addSubnode(self.managedAnimationNode)
         self.contactSyncNode.isHidden = true
+        self.testServerNode.isHidden = true
+        
+        self.testServerNode.switchNode.valueUpdated = { [weak self] value in
+            self?.updateTestingEnvironment?(value)
+        }
         
         self.noticeNode.highlightAttributeAction = { attributes in
             if let _ = attributes[NSAttributedString.Key(rawValue: "URL")] {
@@ -640,6 +651,10 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
         } else {
             self.contactSyncNode.isHidden = true
         }
+        
+        let testServerSize = self.testServerNode.updateLayout(width: maximumWidth)
+        self.testServerNode.isHidden = false
+        items.append(AuthorizationLayoutItem(node: self.testServerNode, size: testServerSize, spacingBefore: AuthorizationLayoutItemSpacing(weight: 14.0, maxValue: 14.0), spacingAfter: AuthorizationLayoutItemSpacing(weight: 0.0, maxValue: 0.0)))
         
         let qrLoginHeight: CGFloat = 44.0
         let buttonFrame: CGRect

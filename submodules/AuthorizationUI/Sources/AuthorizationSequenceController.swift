@@ -31,6 +31,37 @@ private enum InnerState: Equatable {
     case authorized
 }
 
+private final class TestServerBadgeView: UIView {
+    private let label: UILabel
+
+    init(theme: PresentationTheme, title: String) {
+        self.label = UILabel()
+        self.label.text = title
+        self.label.font = Font.semibold(12.0)
+        self.label.textColor = theme.list.itemCheckColors.foregroundColor
+
+        super.init(frame: CGRect())
+
+        self.isUserInteractionEnabled = false
+        self.backgroundColor = theme.list.itemDestructiveColor
+        self.addSubview(self.label)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func updateLayout() -> CGSize {
+        let horizontalInset: CGFloat = 8.0
+        let height: CGFloat = 20.0
+        let labelSize = self.label.sizeThatFits(CGSize(width: .greatestFiniteMagnitude, height: height))
+        let size = CGSize(width: ceil(labelSize.width) + horizontalInset * 2.0, height: height)
+        self.label.frame = CGRect(origin: CGPoint(x: horizontalInset, y: floor((height - labelSize.height) / 2.0)), size: labelSize)
+        self.layer.cornerRadius = height / 2.0
+        return size
+    }
+}
+
 public final class AuthorizationSequenceController: NavigationController, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
     static func navigationBarTheme(_ theme: PresentationTheme) -> NavigationBarTheme {
         return NavigationBarTheme(overallDarkAppearance: theme.overallDarkAppearance, buttonColor: theme.chat.inputPanel.panelControlColor, disabledButtonColor: theme.intro.disabledTextColor, primaryTextColor: theme.intro.primaryTextColor, backgroundColor: .clear, opaqueBackgroundColor: .clear, enableBackgroundBlur: false, separatorColor: .clear, badgeBackgroundColor: theme.rootController.navigationBar.badgeBackgroundColor, badgeStrokeColor: theme.rootController.navigationBar.badgeStrokeColor, badgeTextColor: theme.rootController.navigationBar.badgeTextColor, edgeEffectColor: .clear, accentButtonColor: theme.list.itemCheckColors.fillColor, accentDisabledButtonColor: theme.chat.inputPanel.panelControlDisabledColor, accentForegroundColor: theme.list.itemCheckColors.foregroundColor, style: .glass)
@@ -56,6 +87,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
         return self._ready
     }
     private var didSetReady = false
+    private var testServerBadgeView: TestServerBadgeView?
     
     fileprivate var engine: TelegramEngineUnauthorized {
         return TelegramEngineUnauthorized(account: self.account)
@@ -126,6 +158,24 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
     override public func loadView() {
         super.loadView()
         self.view.backgroundColor = self.presentationData.theme.list.plainBackgroundColor
+
+        if self.account.testingEnvironment {
+            let badgeView = TestServerBadgeView(theme: self.presentationData.theme, title: self.presentationData.strings.Login_TestServer)
+            self.testServerBadgeView = badgeView
+            self.view.addSubview(badgeView)
+        }
+    }
+
+    override public func containerLayoutUpdated(_ layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
+        super.containerLayoutUpdated(layout, transition: transition)
+
+        if let badgeView = self.testServerBadgeView {
+            let badgeSize = badgeView.updateLayout()
+            let inset: CGFloat = 12.0
+            let topInset = (layout.statusBarHeight ?? 20.0) + 6.0
+            transition.updateFrame(view: badgeView, frame: CGRect(origin: CGPoint(x: layout.size.width - layout.safeInsets.right - inset - badgeSize.width, y: topInset), size: badgeSize))
+            self.view.bringSubviewToFront(badgeView)
+        }
     }
     
     private func splashController() -> AuthorizationSequenceSplashController {
@@ -196,6 +246,12 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
             }
             controller.loginWithQr = { [weak self] in
                 self?.pushQrLoginController()
+            }
+            controller.updateTestingEnvironment = { [weak self] value in
+                guard let strongSelf = self, strongSelf.account.testingEnvironment != value else {
+                    return
+                }
+                strongSelf.sharedContext.beginNewAuth(testingEnvironment: value)
             }
             controller.loginWithNumber = { [weak self, weak controller] number, syncContacts in
                 guard let self else {
