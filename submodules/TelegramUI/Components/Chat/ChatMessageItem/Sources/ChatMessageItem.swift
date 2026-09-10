@@ -144,6 +144,40 @@ public protocol ChatMessageItem: ListViewItem {
     func mergedWithItems(top: ListViewItem?, bottom: ListViewItem?, isRotated: Bool) -> (top: ChatMessageMerge, bottom: ChatMessageMerge, dateAtBottom: ChatMessageHeaderSpec)
 }
 
+public func hasUserMediaShareButton(message: EngineRawMessage) -> Bool {
+    if message.id.peerId.namespace == Namespaces.Peer.SecretChat {
+        return false
+    }
+    guard message.author is TelegramUser else {
+        return false
+    }
+    if let peer = message.peers[message.id.peerId], peer.isMonoForum {
+        return false
+    }
+    guard let media = message.media.first else {
+        return false
+    }
+    if media is TelegramMediaAction || media is TelegramMediaExpiredContent {
+        return false
+    }
+    if let media = media as? TelegramMediaWebpage {
+        guard case .Loaded = media.content else {
+            return false
+        }
+    }
+    if let media = media as? TelegramMediaInvoice, let extendedMedia = media.extendedMedia, case .preview = extendedMedia {
+        return false
+    }
+    if let media = media as? TelegramMediaPaidContent {
+        for extendedMedia in media.extendedMedia {
+            if case .preview = extendedMedia {
+                return false
+            }
+        }
+    }
+    return true
+}
+
 public func hasCommentButton(item: ChatMessageItem) -> Bool {
     let firstMessage = item.content.firstMessage
     

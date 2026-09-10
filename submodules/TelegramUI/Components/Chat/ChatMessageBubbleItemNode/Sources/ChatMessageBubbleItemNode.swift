@@ -1921,8 +1921,8 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 }
             }
             
-            if !needsShareButton, let author = item.message.author as? TelegramUser, let _ = author.botInfo {
-                if !item.message.media.isEmpty && !(item.message.media.first is TelegramMediaAction) {
+            if !needsShareButton, let author = item.message.author as? TelegramUser {
+                if hasUserMediaShareButton(message: item.message) {
                     needsShareButton = true
                 } else if author.id == PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(92386307)) || author.id == PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(6435149744)) {
                     needsShareButton = true

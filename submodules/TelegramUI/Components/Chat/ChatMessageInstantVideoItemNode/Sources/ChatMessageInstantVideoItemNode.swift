@@ -358,7 +358,7 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
                         }
                     }
                 }
-                if !needsShareButton, let author = item.message.author as? TelegramUser, let _ = author.botInfo, !item.message.media.isEmpty {
+                if !needsShareButton, hasUserMediaShareButton(message: item.message) {
                     needsShareButton = true
                 }
                 if !needsShareButton {
