@@ -5,7 +5,7 @@ public struct ContactsSettings: Codable {
     public var synchronizeContacts: Bool
     
     public static var defaultSettings: ContactsSettings {
-        return ContactsSettings(synchronizeContacts: true)
+        return ContactsSettings(synchronizeContacts: false)
     }
     
     public init(synchronizeContacts: Bool) {

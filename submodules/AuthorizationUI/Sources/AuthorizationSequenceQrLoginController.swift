@@ -98,7 +98,7 @@ public final class AuthorizationSequenceQrLoginController: ViewController {
                 .filter({ $0.testingEnvironment == account.testingEnvironment })
                 .map({ $0.peerId.id })
 
-            return TelegramEngineUnauthorized(account: account).auth.exportAuthTransferToken(accountManager: sharedContext.accountManager, otherAccountUserIds: otherUserIds, syncContacts: true)
+            return TelegramEngineUnauthorized(account: account).auth.exportAuthTransferToken(accountManager: sharedContext.accountManager, otherAccountUserIds: otherUserIds, syncContacts: false)
         }
 
         self.exportTokenDisposable.set((tokenSignal

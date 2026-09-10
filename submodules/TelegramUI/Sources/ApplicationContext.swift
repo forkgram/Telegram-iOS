@@ -598,16 +598,18 @@ final class AuthorizedApplicationContext {
         
         if #available(iOS 10.0, *) {
             let permissionsPosition = ValuePromise(0, ignoreRepeated: true)
-            self.permissionsDisposable.set((combineLatest(queue: .mainQueue(), requiredPermissions(context: context), permissionUISplitTest(postbox: context.account.postbox), permissionsPosition.get(), context.sharedContext.accountManager.noticeEntry(key: ApplicationSpecificNotice.permissionWarningKey(permission: .contacts)!), context.sharedContext.accountManager.noticeEntry(key: ApplicationSpecificNotice.permissionWarningKey(permission: .notifications)!), context.sharedContext.accountManager.noticeEntry(key: ApplicationSpecificNotice.permissionWarningKey(permission: .cellularData)!))
-            |> deliverOnMainQueue).start(next: { [weak self] required, splitTest, position, contactsPermissionWarningNotice, notificationsPermissionWarningNotice, cellularDataPermissionWarningNotice in
+            self.permissionsDisposable.set((combineLatest(queue: .mainQueue(), requiredPermissions(context: context), permissionUISplitTest(postbox: context.account.postbox), permissionsPosition.get(), context.sharedContext.accountManager.noticeEntry(key: ApplicationSpecificNotice.permissionWarningKey(permission: .contacts)!), context.sharedContext.accountManager.noticeEntry(key: ApplicationSpecificNotice.permissionWarningKey(permission: .notifications)!), context.sharedContext.accountManager.noticeEntry(key: ApplicationSpecificNotice.permissionWarningKey(permission: .cellularData)!), context.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.ApplicationSpecificPreference(key: PreferencesKeys.contactsSettings)))
+            |> deliverOnMainQueue).start(next: { [weak self] required, splitTest, position, contactsPermissionWarningNotice, notificationsPermissionWarningNotice, cellularDataPermissionWarningNotice, contactsPreferences in
                 guard let strongSelf = self else {
                     return
                 }
                 
+                let synchronizeContacts = (contactsPreferences?.get(ContactsSettings.self) ?? .defaultSettings).synchronizeContacts
+                
                 let contactsTimestamp = contactsPermissionWarningNotice.value.flatMap({ ApplicationSpecificNotice.getTimestampValue($0) })
                 let notificationsTimestamp = notificationsPermissionWarningNotice.value.flatMap({ ApplicationSpecificNotice.getTimestampValue($0) })
                 let cellularDataTimestamp = cellularDataPermissionWarningNotice.value.flatMap({ ApplicationSpecificNotice.getTimestampValue($0) })
-                if contactsTimestamp == nil, case .requestable = required.0.status {
+                if synchronizeContacts, contactsTimestamp == nil, case .requestable = required.0.status {
                     ApplicationSpecificNotice.setPermissionWarning(accountManager: context.sharedContext.accountManager, permission: .contacts, value: 1)
                 }
                 if notificationsTimestamp == nil, case .requestable = required.1.status {
@@ -635,7 +637,7 @@ final class AuthorizedApplicationContext {
                             if case .modal = config.contacts {
                                 modal = true
                             }
-                            if case .requestable = required.0.status, contactsTimestamp != 0 {
+                            if synchronizeContacts, case .requestable = required.0.status, contactsTimestamp != 0 {
                                 requestedPermissions.append((required.0, modal))
                             }
                         case .notifications:

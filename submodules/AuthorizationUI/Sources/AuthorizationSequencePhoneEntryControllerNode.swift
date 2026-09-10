@@ -277,7 +277,7 @@ private final class ContactSyncNode: ASDisplayNode {
         self.switchNode.frameColor = theme.list.itemSwitchColors.frameColor
         self.switchNode.contentColor = theme.list.itemSwitchColors.contentColor
         self.switchNode.handleColor = theme.list.itemSwitchColors.handleColor
-        self.switchNode.isOn = true
+        self.switchNode.isOn = false
         
         super.init()
         
@@ -349,7 +349,7 @@ final class AuthorizationSequencePhoneEntryControllerNode: ASDisplayNode {
             if self.hasOtherAccounts {
                 return self.contactSyncNode.switchNode.isOn
             } else {
-                return true
+                return false
             }
         }
     }
