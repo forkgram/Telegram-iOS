@@ -16,6 +16,12 @@ import BundleIconComponent
 import LottieComponent
 import CheckNode
 import ChatMessagePaymentAlertController
+import ChatScheduleTimeController
+
+struct ShareControllerFastForwardCapabilities: Equatable {
+    var canGroupIntoAlbum: Bool = false
+    var canDeleteOriginals: Bool = false
+}
 
 enum ShareState {
     case preparing(Bool)
@@ -361,7 +367,7 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
     var dismiss: ((Bool) -> Void)?
     var cancel: (() -> Void)?
     var tryShare: ((String, [EnginePeer]) -> Bool)?
-    var share: ((String, [PeerId], [PeerId: Int64], Bool, Bool) -> Signal<ShareState, ShareControllerError>)?
+    var share: ((String, [PeerId], [PeerId: Int64], Bool, Bool, ShareControllerFastForwardOptions, Int32?) -> Signal<ShareState, ShareControllerError>)?
     var shareExternal: ((Bool) -> Signal<ShareExternalState, NoError>)?
     var switchToAnotherAccount: (() -> Void)?
     var debugAction: (() -> Void)?
@@ -369,6 +375,7 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
     var completed: (([PeerId]) -> Void)?
     var enqueued: (([PeerId], [Int64]) -> Void)?
     var present: ((ViewController) -> Void)?
+    var presentInWindow: ((ViewController) -> Void)?
     var disabledPeerSelected: ((EnginePeer) -> Void)?
     var onMediaTimestampLinkCopied: ((Int32?) -> Void)?
     
@@ -389,6 +396,33 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
     private let presetText: String?
     
     private let showNames = ValuePromise<Bool>(true)
+    
+    var fastForwardIsAvailable: Bool = false
+    private let fastForwardCapabilities = ValuePromise<ShareControllerFastForwardCapabilities>(ShareControllerFastForwardCapabilities(), ignoreRepeated: true)
+    private var fastForwardCapabilitiesValue = ShareControllerFastForwardCapabilities() {
+        didSet {
+            self.fastForwardCapabilities.set(self.fastForwardCapabilitiesValue)
+        }
+    }
+    private let fastForwardOptions = ValuePromise<ShareControllerFastForwardOptions>(ShareControllerFastForwardOptions(), ignoreRepeated: true)
+    private var fastForwardOptionsValue = ShareControllerFastForwardOptions() {
+        didSet {
+            self.fastForwardOptions.set(self.fastForwardOptionsValue)
+            if self.fastForwardOptionsValue.isEnabled != oldValue.isEnabled {
+                self.updateButton()
+            }
+        }
+    }
+    func setFastForwardEnabledByDefault() {
+        self.fastForwardIsAvailable = true
+        self.fastForwardOptionsValue.isEnabled = true
+    }
+    func setFastForwardCanGroupIntoAlbum(_ value: Bool) {
+        self.fastForwardCapabilitiesValue.canGroupIntoAlbum = value
+    }
+    func setFastForwardCanDeleteOriginals(_ value: Bool) {
+        self.fastForwardCapabilitiesValue.canDeleteOriginals = value
+    }
     
     init(
         controller: ShareController,
@@ -538,11 +572,23 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
             if let strongSelf = self, let node = node as? ContextReferenceContentNode {
                 let presentationData = strongSelf.presentationData
                 let fromForeignApp = strongSelf.fromForeignApp
-                let items: Signal<ContextController.Items, NoError> =
-                strongSelf.showNames.get()
-                |> map { showNamesValue in
+                let fastForwardIsAvailable = strongSelf.fastForwardIsAvailable
+                let hasComment = !strongSelf.inputFieldNode.text.isEmpty
+                var canSchedule = true
+                for renderedPeer in strongSelf.controllerInteraction?.selectedPeers ?? [] {
+                    if case .secretChat = renderedPeer.peer {
+                        canSchedule = false
+                        break
+                    }
+                }
+                let items: Signal<ContextController.Items, NoError> = combineLatest(
+                    strongSelf.showNames.get(),
+                    strongSelf.fastForwardOptions.get(),
+                    strongSelf.fastForwardCapabilities.get()
+                )
+                |> map { showNamesValue, fastForwardValue, capabilities in
                     var items: [ContextMenuItem] = []
-                    if !fromForeignApp {
+                    if !fromForeignApp && !fastForwardIsAvailable {
                         items.append(contentsOf: [
                             .action(ContextMenuActionItem(text: presentationData.strings.Conversation_ForwardOptions_ShowSendersName, icon: { theme in
                                 if showNamesValue {
@@ -577,6 +623,60 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                         )
                     }
                     
+                    if fastForwardIsAvailable && !fromForeignApp {
+                        let checkmark: (Bool) -> (PresentationTheme) -> UIImage? = { isOn in
+                            return { theme in
+                                if isOn {
+                                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Check"), color: theme.contextMenu.primaryColor)
+                                } else {
+                                    return UIImage()
+                                }
+                            }
+                        }
+                        
+                        if !fastForwardValue.isEnabled {
+                            items.append(.action(ContextMenuActionItem(text: presentationData.strings.FastForward_SendWithoutSenderName, icon: { theme in
+                                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/FastForward"), color: theme.contextMenu.primaryColor)
+                            }, action: { _, f in
+                                f(.default)
+                                if let strongSelf = self {
+                                    var options = strongSelf.fastForwardOptionsValue
+                                    options.isEnabled = true
+                                    strongSelf.send(showNames: showNamesValue, silently: false, fastForward: options)
+                                }
+                            })))
+                        }
+                        items.append(.action(ContextMenuActionItem(text: hasComment ? presentationData.strings.FastForward_SendWithComment : presentationData.strings.FastForward_SendWithoutText, icon: { theme in
+                            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Caption"), color: theme.contextMenu.primaryColor)
+                        }, action: { _, f in
+                            f(.default)
+                            if let strongSelf = self {
+                                var options = strongSelf.fastForwardOptionsValue
+                                options.isEnabled = true
+                                options.removeCaptions = true
+                                strongSelf.send(showNames: showNamesValue, silently: false, fastForward: options)
+                            }
+                        })))
+                        if capabilities.canGroupIntoAlbum {
+                            items.append(.action(ContextMenuActionItem(text: presentationData.strings.FastForward_GroupIntoAlbum, icon: checkmark(fastForwardValue.groupIntoAlbum), action: { _, _ in
+                                self?.fastForwardOptionsValue.groupIntoAlbum = !fastForwardValue.groupIntoAlbum
+                            })))
+                        }
+                        if capabilities.canDeleteOriginals {
+                            items.append(.action(ContextMenuActionItem(text: presentationData.strings.FastForward_DeleteOriginals, icon: checkmark(fastForwardValue.deleteOriginals), action: { _, _ in
+                                self?.fastForwardOptionsValue.deleteOriginals = !fastForwardValue.deleteOriginals
+                            })))
+                        }
+                        items.append(.separator)
+                    }
+                    
+                    if !fromForeignApp && canSchedule {
+                        items.append(.action(ContextMenuActionItem(text: presentationData.strings.Conversation_SendMessage_ScheduleMessage, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Schedule"), color: theme.contextMenu.primaryColor) }, action: { _, f in
+                            f(.default)
+                            self?.presentSchedulePicker(showNames: showNamesValue)
+                        })))
+                    }
+                    
                     items.append(contentsOf: [
                         .action(ContextMenuActionItem(text: presentationData.strings.Conversation_SendMessage_SendSilently, icon: { theme in return generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Menu/SilentIcon"), color: theme.contextMenu.primaryColor) }, action: { _, f in
                             f(.default)
@@ -591,6 +691,20 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                             }
                         }))
                     ])
+                    
+                    if fastForwardIsAvailable && !fromForeignApp && fastForwardValue.isEnabled {
+                        items.append(.action(ContextMenuActionItem(text: presentationData.strings.FastForward_ForwardNormally, icon: { theme in
+                            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.contextMenu.primaryColor)
+                        }, action: { _, f in
+                            f(.default)
+                            if let strongSelf = self {
+                                var options = strongSelf.fastForwardOptionsValue
+                                options.isEnabled = false
+                                strongSelf.send(showNames: showNamesValue, silently: false, fastForward: options)
+                            }
+                        })))
+                    }
+                    
                     return ContextController.Items(content: .list(items), animationCache: nil)
                 }
                 let contextController = makeContextController(presentationData: presentationData, source: .reference(ShareContextReferenceContentSource(sourceNode: node, customPosition: CGPoint(x: 0.0, y: fromForeignApp ? -116.0 : 0.0))), items: items, gesture: gesture)
@@ -1301,7 +1415,40 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
         }
     }
         
-    func send(peerId: PeerId? = nil, showNames: Bool = true, silently: Bool = false) {
+    private func presentSchedulePicker(showNames: Bool) {
+        guard let accountContext = (self.context as? ShareControllerAppAccountContext)?.context else {
+            return
+        }
+        var singleUserId: EnginePeer.Id?
+        if let selectedPeers = self.controllerInteraction?.selectedPeers, selectedPeers.count == 1, let peer = selectedPeers.first?.peer, case .user = peer {
+            singleUserId = peer.id
+        }
+        let presence: Signal<EnginePeer.Presence?, NoError>
+        if let singleUserId {
+            presence = accountContext.engine.data.get(TelegramEngine.EngineData.Item.Peer.Presence(id: singleUserId))
+        } else {
+            presence = .single(nil)
+        }
+        let _ = (presence
+        |> take(1)
+        |> deliverOnMainQueue).startStandalone(next: { [weak self] presence in
+            guard let self else {
+                return
+            }
+            var sendWhenOnlineAvailable = false
+            if let presence, case .present = presence.status {
+                sendWhenOnlineAvailable = true
+            }
+            let timeController = ChatScheduleTimeController(context: accountContext, updatedPresentationData: nil, mode: .scheduledMessages(sendWhenOnlineAvailable: sendWhenOnlineAvailable), style: .default, currentTime: nil, minimalTime: nil, dismissByTapOutside: true, completion: { [weak self] time in
+                self?.send(showNames: showNames, silently: false, scheduleTime: time)
+            })
+            self.view.endEditing(true)
+            self.presentInWindow?(timeController)
+        })
+    }
+    
+    func send(peerId: PeerId? = nil, showNames: Bool = true, silently: Bool = false, fastForward: ShareControllerFastForwardOptions? = nil, scheduleTime: Int32? = nil) {
+        let fastForward = fastForward ?? self.fastForwardOptionsValue
         let peerIds: [PeerId]
         if let peerId = peerId {
             peerIds = [peerId]
@@ -1356,12 +1503,12 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                 }
 
                 self.presentPaidMessageAlertIfNeeded(peers: mappedPeers, requiresStars: requiresStars, completion: { [weak self] in
-                    self?.commitSend(peerId: peerId, showNames: showNames, silently: silently)
+                    self?.commitSend(peerId: peerId, showNames: showNames, silently: silently, fastForward: fastForward, scheduleTime: scheduleTime)
                 })
                 
             })
         } else {
-            self.commitSend(peerId: peerId, showNames: showNames, silently: silently)
+            self.commitSend(peerId: peerId, showNames: showNames, silently: silently, fastForward: fastForward, scheduleTime: scheduleTime)
         }
     }
     
@@ -1399,7 +1546,7 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
         }
     }
     
-    private func commitSend(peerId: PeerId?, showNames: Bool, silently: Bool) {
+    private func commitSend(peerId: PeerId?, showNames: Bool, silently: Bool, fastForward: ShareControllerFastForwardOptions, scheduleTime: Int32?) {
         if !self.inputFieldNode.text.isEmpty {
             for peer in self.controllerInteraction!.selectedPeers {
                 if case let .channel(channel) = peer.peer, channel.isRestrictedBySlowmode {
@@ -1437,7 +1584,7 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
             self.environment.donateSendMessageIntent(account: context, peerIds: peerIds)
         }
         
-        if let signal = self.share?(self.inputFieldNode.text, peerIds, topicIds, showNames, silently) {
+        if let signal = self.share?(self.inputFieldNode.text, peerIds, topicIds, showNames, silently, fastForward, scheduleTime) {
             var wasDone = false
             let timestamp = CACurrentMediaTime()
             let doneImpl: (Bool) -> Void = { [weak self] shouldDelay in
@@ -1861,6 +2008,8 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
             if let segmentedValues = self.segmentedValues {
                 let value = segmentedValues[self.selectedSegmentedIndex]
                 text = value.formatSendTitle(count)
+            } else if self.fastForwardOptionsValue.isEnabled {
+                text = self.presentationData.strings.FastForward_Title
             } else {
                 text = self.presentationData.strings.ShareMenu_Send
             }

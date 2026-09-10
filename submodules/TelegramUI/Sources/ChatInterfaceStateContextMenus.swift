@@ -33,6 +33,7 @@ import ChatRichTextEditorComposer
 import SettingsUI
 import TextNodeWithEntities
 import ChatControllerInteraction
+import ShareController
 import ChatMessageItemCommon
 import ChatMessageItemView
 import ChatMessageBubbleItemNode
@@ -1930,6 +1931,15 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     interfaceInteraction.forwardMessages(selectAll || isImage ? messages : [message])
                     f(.dismissWithoutContent)
                 })))
+                let fastForwardMessages = selectAll || isImage ? messages : [message]
+                if fastForwardMessages.contains(where: fastForwardCanCopy) {
+                    actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.FastForward_Title, icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/FastForward"), color: theme.actionSheet.primaryTextColor)
+                    }, action: { _, f in
+                        interfaceInteraction.fastForwardMessages(fastForwardMessages)
+                        f(.dismissWithoutContent)
+                    })))
+                }
             }
         }
         

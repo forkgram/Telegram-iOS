@@ -1,4 +1,6 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
+load("@build_bazel_rules_apple//apple/testing/default_runner:ios_test_runner.bzl", "ios_test_runner")
 
 swift_library(
     name = "ShareController",
@@ -47,8 +49,45 @@ swift_library(
         "//submodules/TelegramUI/Components/MessageInputPanelComponent",
         "//submodules/TelegramUI/Components/ChatEntityKeyboardInputNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessagePaymentAlertController",
+        "//submodules/TelegramUI/Components/ChatScheduleTimeController",
         "//submodules/ChatPresentationInterfaceState",
         "//submodules/CheckNode",
+    ],
+    visibility = [
+        "//visibility:public",
+    ],
+)
+
+swift_library(
+    name = "ShareControllerTestsLib",
+    testonly = True,
+    srcs = glob([
+        "Tests/**/*.swift",
+    ]),
+    linkopts = [
+        "-framework",
+        "MediaPlayer",
+    ],
+    deps = [
+        ":ShareController",
+        "//submodules/Postbox:Postbox",
+        "//submodules/TelegramCore:TelegramCore",
+        "//submodules/AccountContext:AccountContext",
+    ],
+)
+
+ios_test_runner(
+    name = "ShareControllerTestRunner",
+    device_type = "iPhone 17",
+    os_version = "26.5",
+)
+
+ios_unit_test(
+    name = "ShareControllerTests",
+    minimum_os_version = "15.0",
+    runner = ":ShareControllerTestRunner",
+    deps = [
+        ":ShareControllerTestsLib",
     ],
     visibility = [
         "//visibility:public",

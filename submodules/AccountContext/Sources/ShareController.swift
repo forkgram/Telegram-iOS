@@ -146,6 +146,27 @@ public struct ShareControllerSegmentedValue {
     }
 }
 
+public struct ShareControllerFastForwardOptions: Equatable {
+    public static let albumSizeLimit = 10
+
+    public var isEnabled: Bool
+    public var removeCaptions: Bool
+    public var groupIntoAlbum: Bool
+    public var deleteOriginals: Bool
+
+    public init(
+        isEnabled: Bool = false,
+        removeCaptions: Bool = false,
+        groupIntoAlbum: Bool = false,
+        deleteOriginals: Bool = false
+    ) {
+        self.isEnabled = isEnabled
+        self.removeCaptions = removeCaptions
+        self.groupIntoAlbum = groupIntoAlbum
+        self.deleteOriginals = deleteOriginals
+    }
+}
+
 public final class ShareControllerParams {
     public let subject: ShareControllerSubject
     public let presetText: String?
@@ -171,6 +192,7 @@ public final class ShareControllerParams {
     public let onMediaTimestampLinkCopied: ((Int32?) -> Void)?
     public weak var parentNavigationController: NavigationController?
     public let canSendInHighQuality: Bool
+    public let fastForward: Bool
 
     public init(
         subject: ShareControllerSubject,
@@ -195,7 +217,8 @@ public final class ShareControllerParams {
         debugAction: (() -> Void)? = nil,
         onMediaTimestampLinkCopied: ((Int32?) -> Void)? = nil,
         parentNavigationController: NavigationController? = nil,
-        canSendInHighQuality: Bool = false
+        canSendInHighQuality: Bool = false,
+        fastForward: Bool = false
     ) {
         self.subject = subject
         self.presetText = presetText
@@ -220,5 +243,6 @@ public final class ShareControllerParams {
         self.onMediaTimestampLinkCopied = onMediaTimestampLinkCopied
         self.parentNavigationController = parentNavigationController
         self.canSendInHighQuality = canSendInHighQuality
+        self.fastForward = fastForward
     }
 }

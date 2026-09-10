@@ -181,6 +181,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     private let deleteButton: GlassButtonView
     private let reportButton: GlassButtonView
     private let forwardButton: GlassButtonView
+    private let fastForwardButton: GlassButtonView
     private let shareButton: GlassButtonView
     private let tagButton: GlassButtonView
     private let tagEditButton: GlassButtonView
@@ -225,6 +226,11 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         self.forwardButton.isAccessibilityElement = true
         self.forwardButton.accessibilityLabel = strings.VoiceOver_MessageContextForward
         
+        self.fastForwardButton = GlassButtonView()
+        self.fastForwardButton.icon = "Chat/Input/Accessory Panels/MessageSelectionFastForward"
+        self.fastForwardButton.isAccessibilityElement = true
+        self.fastForwardButton.accessibilityLabel = strings.FastForward_Title
+        
         self.shareButton = GlassButtonView()
         self.shareButton.icon = "Chat/Input/Accessory Panels/MessageSelectionAction"
         self.shareButton.isAccessibilityElement = true
@@ -247,6 +253,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         self.view.addSubview(self.deleteButton)
         self.view.addSubview(self.reportButton)
         self.view.addSubview(self.forwardButton)
+        self.view.addSubview(self.fastForwardButton)
         self.view.addSubview(self.shareButton)
         self.view.addSubview(self.tagButton)
         self.view.addSubview(self.tagEditButton)
@@ -254,11 +261,13 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         self.viewForOverlayContent = self.reactionOverlayContainer
         
         self.forwardButton.isImplicitlyDisabled = true
+        self.fastForwardButton.isImplicitlyDisabled = true
         self.shareButton.isImplicitlyDisabled = true
         
         self.deleteButton.button.addTarget(self, action: #selector(self.deleteButtonPressed), for: .touchUpInside)
         self.reportButton.button.addTarget(self, action: #selector(self.reportButtonPressed), for: .touchUpInside)
         self.forwardButton.button.addTarget(self, action: #selector(self.forwardButtonPressed), for: .touchUpInside)
+        self.fastForwardButton.button.addTarget(self, action: #selector(self.fastForwardButtonPressed), for: .touchUpInside)
         self.shareButton.button.addTarget(self, action: #selector(self.shareButtonPressed), for: .touchUpInside)
         self.tagButton.button.addTarget(self, action: #selector(self.tagButtonPressed), for: .touchUpInside)
         self.tagEditButton.button.addTarget(self, action: #selector(self.tagButtonPressed), for: .touchUpInside)
@@ -270,6 +279,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     
     private func updateActions() {
         self.forwardButton.isEnabled = self.selectedMessages.count != 0
+        self.fastForwardButton.isEnabled = self.selectedMessages.count != 0
         
         if self.selectedMessages.isEmpty {
             self.actions = nil
@@ -312,6 +322,17 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             self.interfaceInteraction?.displayCopyProtectionTip(self.forwardButton, false)
         } else if !self.forwardButton.isImplicitlyDisabled {
             self.interfaceInteraction?.forwardSelectedMessages()
+        }
+    }
+    
+    @objc private func fastForwardButtonPressed() {
+        if let _ = self.presentationInterfaceState?.renderedPeer?.peer as? TelegramSecretChat {
+            return
+        }
+        if let actions = self.actions, actions.isCopyProtected {
+            self.interfaceInteraction?.displayCopyProtectionTip(self.fastForwardButton, false)
+        } else if !self.fastForwardButton.isImplicitlyDisabled {
+            self.interfaceInteraction?.fastForwardSelectedMessages()
         }
     }
     
@@ -465,6 +486,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             self.deleteButton.isEnabled = false
             self.reportButton.isEnabled = false
             self.forwardButton.isImplicitlyDisabled = !actions.options.contains(.forward)
+            self.fastForwardButton.isImplicitlyDisabled = self.forwardButton.isImplicitlyDisabled
             
             if self.peerMedia {
                 self.deleteButton.isEnabled = !actions.options.intersection([.deleteLocally, .deleteGlobally]).isEmpty
@@ -499,6 +521,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             self.reportButton.isEnabled = false
             self.reportButton.isHidden = true
             self.forwardButton.isImplicitlyDisabled = true
+            self.fastForwardButton.isImplicitlyDisabled = true
             self.shareButton.isImplicitlyDisabled = true
             self.tagButton.isHidden = true
             self.tagEditButton.isHidden = true
@@ -533,12 +556,14 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
                     self.deleteButton,
                     tagButton,
                     self.shareButton,
+                    self.fastForwardButton,
                     self.forwardButton
                 ]
             } else {
                 buttons = [
                     self.deleteButton,
                     self.shareButton,
+                    self.fastForwardButton,
                     self.forwardButton
                 ]
             }
@@ -549,6 +574,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
                     self.reportButton,
                     tagButton,
                     self.shareButton,
+                    self.fastForwardButton,
                     self.forwardButton
                 ]
             } else {
@@ -556,6 +582,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
                     self.deleteButton,
                     self.reportButton,
                     self.shareButton,
+                    self.fastForwardButton,
                     self.forwardButton
                 ]
             }
@@ -566,6 +593,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
                     self.reportButton,
                     tagButton,
                     self.shareButton,
+                    self.fastForwardButton,
                     self.forwardButton
                 ]
             } else {
@@ -573,6 +601,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
                     self.deleteButton,
                     self.reportButton,
                     self.shareButton,
+                    self.fastForwardButton,
                     self.forwardButton
                 ]
             }

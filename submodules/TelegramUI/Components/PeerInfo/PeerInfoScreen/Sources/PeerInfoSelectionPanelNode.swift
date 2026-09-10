@@ -15,6 +15,7 @@ final class PeerInfoSelectionPanelNode: ASDisplayNode {
     private let deleteMessages: () -> Void
     private let shareMessages: () -> Void
     private let forwardMessages: () -> Void
+    private let fastForwardMessages: () -> Void
     private let reportMessages: () -> Void
     private let displayCopyProtectionTip: (UIView, Bool) -> Void
     
@@ -26,12 +27,13 @@ final class PeerInfoSelectionPanelNode: ASDisplayNode {
         return self.selectionPanel.viewForOverlayContent
     }
     
-    init(context: AccountContext, presentationData: PresentationData, peerId: EnginePeer.Id, deleteMessages: @escaping () -> Void, shareMessages: @escaping () -> Void, forwardMessages: @escaping () -> Void, reportMessages: @escaping () -> Void, displayCopyProtectionTip: @escaping (UIView, Bool) -> Void) {
+    init(context: AccountContext, presentationData: PresentationData, peerId: EnginePeer.Id, deleteMessages: @escaping () -> Void, shareMessages: @escaping () -> Void, forwardMessages: @escaping () -> Void, fastForwardMessages: @escaping () -> Void, reportMessages: @escaping () -> Void, displayCopyProtectionTip: @escaping (UIView, Bool) -> Void) {
         self.context = context
         self.peerId = peerId
         self.deleteMessages = deleteMessages
         self.shareMessages = shareMessages
         self.forwardMessages = forwardMessages
+        self.fastForwardMessages = fastForwardMessages
         self.reportMessages = reportMessages
         self.displayCopyProtectionTip = displayCopyProtectionTip
         
@@ -183,7 +185,9 @@ final class PeerInfoSelectionPanelNode: ASDisplayNode {
         }, requestLayout: { _ in
         }, chatController: {
             return nil
-        }, statuses: nil)
+        }, statuses: nil, fastForwardSelectedMessages: {
+            fastForwardMessages()
+        })
         
         self.selectionPanel.interfaceInteraction = interfaceInteraction
         

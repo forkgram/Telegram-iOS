@@ -16631,6 +16631,14 @@ Error: %8$@";
 "Login.QrUsePhoneNumber" = "Or log in using your phone number";
 
 "VideoMessage.RememberCamera" = "Remember Camera";
+
+"FastForward.Title" = "Fast Forward";
+"FastForward.SendWithoutSenderName" = "Send without Sender Name";
+"FastForward.SendWithoutText" = "Send without Text";
+"FastForward.SendWithComment" = "Send with Comment";
+"FastForward.GroupIntoAlbum" = "Group into Album";
+"FastForward.DeleteOriginals" = "Delete Originals";
+"FastForward.ForwardNormally" = "Forward with Attribution";
 "HiddenAccounts.SetAppPasscode" = "Set App Passcode";
 "HiddenAccounts.CodeType4Digits" = "4 digits";
 "HiddenAccounts.CodeType6Digits" = "6 digits";

@@ -350,6 +350,7 @@ public final class ShareController: ViewController {
     private let peersDisposable = MetaDisposable()
     private let readyDisposable = MetaDisposable()
     private let accountActiveDisposable = MetaDisposable()
+    private let fastForwardDeletionDisposable = MetaDisposable()
     
     private var defaultAction: ShareControllerAction?
     public private(set) var actionIsMediaSaving = false
@@ -381,6 +382,14 @@ public final class ShareController: ViewController {
     }
 
     public var debugAction: (() -> Void)?
+    
+    public var fastForward = false {
+        didSet {
+            if self.isNodeLoaded {
+                self.updateFastForwardAvailability()
+            }
+        }
+    }
     
     public var onMediaTimestampLinkCopied: ((Int32?) -> Void)?
     
@@ -600,11 +609,42 @@ public final class ShareController: ViewController {
         self.peersDisposable.dispose()
         self.readyDisposable.dispose()
         self.accountActiveDisposable.dispose()
+        self.fastForwardDeletionDisposable.dispose()
         
         if self.fromForeignApp {
             if let application = UIApplication.value(forKeyPath: #keyPath(UIApplication.shared)) as? UIApplication {
                 application.isIdleTimerDisabled = false
             }
+        }
+    }
+    
+    private func updateFastForwardAvailability() {
+        guard self.currentContext is ShareControllerAppAccountContext, !self.fromForeignApp else {
+            return
+        }
+        var subject = self.subject
+        if let segmentedValues = self.segmentedValues {
+            subject = segmentedValues[self.controllerNode.selectedSegmentedIndex].subject
+        }
+        guard shareSubjectSupportsFastForward(subject) else {
+            return
+        }
+        if case let .messages(messages) = subject {
+            self.controllerNode.setFastForwardCanGroupIntoAlbum(fastForwardGroupableCount(messages) > 1)
+            if let accountContext = self.currentContext as? ShareControllerAppAccountContext {
+                self.fastForwardDeletionDisposable.set((fastForwardCanDeleteOriginals(context: accountContext.context, messages: messages)
+                |> deliverOnMainQueue).startStrict(next: { [weak self] canDelete in
+                    guard let self, self.isNodeLoaded else {
+                        return
+                    }
+                    self.controllerNode.setFastForwardCanDeleteOriginals(canDelete)
+                }))
+            }
+        }
+        if self.fastForward {
+            self.controllerNode.setFastForwardEnabledByDefault()
+        } else {
+            self.controllerNode.fastForwardIsAvailable = true
         }
     }
     
@@ -670,10 +710,14 @@ public final class ShareController: ViewController {
             messageCount: messageCount
         )
         self.controllerNode.canSendInHighQuality = self.canSendInHighQuality
+        self.updateFastForwardAvailability()
         self.controllerNode.completed = self.completed
         self.controllerNode.enqueued = self.enqueued
         self.controllerNode.present = { [weak self] c in
             self?.presentInGlobalOverlay(c)
+        }
+        self.controllerNode.presentInWindow = { [weak self] c in
+            self?.present(c, in: .window(.root))
         }
         self.controllerNode.dismiss = { [weak self] shared in
             self?.dismissed?(shared)
@@ -935,7 +979,7 @@ public final class ShareController: ViewController {
             return true
         }
         
-        self.controllerNode.share = { [weak self] text, peerIds, topicIds, showNames, silently in
+        self.controllerNode.share = { [weak self] text, peerIds, topicIds, showNames, silently, fastForward, scheduleTime in
             guard let self else {
                 return .complete()
             }
@@ -951,7 +995,7 @@ public final class ShareController: ViewController {
             }
             
             if useLegacy {
-                return self.shareLegacy(text: text, peerIds: peerIds, topicIds: topicIds, showNames: showNames, silently: silently)
+                return self.shareLegacy(text: text, peerIds: peerIds, topicIds: topicIds, showNames: showNames, silently: silently, fastForward: fastForward, scheduleTime: scheduleTime)
             } else {
                 return self.shareModern(text: text, peerIds: peerIds, topicIds: topicIds, showNames: showNames, silently: silently)
             }
@@ -1873,7 +1917,7 @@ public final class ShareController: ViewController {
         }
     }
     
-    private func shareLegacy(text: String, peerIds: [EnginePeer.Id], topicIds: [EnginePeer.Id: Int64], showNames: Bool, silently: Bool) -> Signal<ShareState, ShareControllerError> {
+    private func shareLegacy(text: String, peerIds: [EnginePeer.Id], topicIds: [EnginePeer.Id: Int64], showNames: Bool, silently: Bool, fastForward: ShareControllerFastForwardOptions, scheduleTime: Int32?) -> Signal<ShareState, ShareControllerError> {
         guard let currentContext = self.currentContext as? ShareControllerAppAccountContext else {
             return .single(.done([]))
         }
@@ -1916,6 +1960,11 @@ public final class ShareController: ViewController {
                 subject = selectedValue.subject
             }
             
+            var originalsToDelete: [Message] = []
+            if fastForward.deleteOriginals, case let .messages(messages) = subject {
+                originalsToDelete = messages
+            }
+            
             func transformMessages(_ messages: [EnqueueMessage], showNames: Bool, silently: Bool, sendPaidMessageStars: StarsAmount?) -> [EnqueueMessage] {
                 return messages.map { message in
                     return message.withUpdatedAttributes({ attributes in
@@ -1925,6 +1974,9 @@ public final class ShareController: ViewController {
                         }
                         if silently {
                             attributes.append(NotificationInfoMessageAttribute(flags: .muted))
+                        }
+                        if let scheduleTime {
+                            attributes.append(OutgoingScheduleInfoMessageAttribute(scheduleTime: scheduleTime, repeatPeriod: nil))
                         }
                         if let sendPaidMessageStars {
                             attributes.append(PaidStarsMessageAttribute(stars: sendPaidMessageStars, postponeSending: false))
@@ -2078,7 +2130,7 @@ public final class ShareController: ViewController {
                 }
             case let .media(mediaReference, mediaParameters):
                 var forwardSourceMessageId: EngineMessage.Id?
-                if case let .message(message, _) = mediaReference, let sourceMessageId = message.id, (sourceMessageId.peerId.namespace == Namespaces.Peer.CloudUser || sourceMessageId.peerId.namespace == Namespaces.Peer.CloudGroup || sourceMessageId.peerId.namespace == Namespaces.Peer.CloudChannel) {
+                if !fastForward.isEnabled, case let .message(message, _) = mediaReference, let sourceMessageId = message.id, (sourceMessageId.peerId.namespace == Namespaces.Peer.CloudUser || sourceMessageId.peerId.namespace == Namespaces.Peer.CloudGroup || sourceMessageId.peerId.namespace == Namespaces.Peer.CloudChannel) {
                     forwardSourceMessageId = sourceMessageId
                 }
                 
@@ -2232,9 +2284,11 @@ public final class ShareController: ViewController {
                             return .fail(.generic)
                         }
                         
-                        let correlationId = Int64.random(in: Int64.min ... Int64.max)
-                        correlationIds.append(correlationId)
-                        messagesToEnqueue.append(.message(text: text, attributes: [], inlineStickers: [:], mediaReference: nil, threadId: threadId, replyToMessageId: replyToMessageId.flatMap { EngineMessageReplySubject(messageId: $0, quote: nil, innerSubject: nil) }, replyToStoryId: nil, localGroupingKey: nil, correlationId: correlationId, bubbleUpEmojiOrStickersets: []))
+                        if !(fastForward.isEnabled && fastForward.removeCaptions) {
+                            let correlationId = Int64.random(in: Int64.min ... Int64.max)
+                            correlationIds.append(correlationId)
+                            messagesToEnqueue.append(.message(text: text, attributes: [], inlineStickers: [:], mediaReference: nil, threadId: threadId, replyToMessageId: replyToMessageId.flatMap { EngineMessageReplySubject(messageId: $0, quote: nil, innerSubject: nil) }, replyToStoryId: nil, localGroupingKey: nil, correlationId: correlationId, bubbleUpEmojiOrStickersets: []))
+                        }
                     }
                     for message in messages {
                         for media in message.media {
@@ -2292,12 +2346,40 @@ public final class ShareController: ViewController {
                             }
                         }
                         
+                        if fastForward.isEnabled {
+                            continue
+                        }
                         let correlationId = Int64.random(in: Int64.min ... Int64.max)
                         correlationIds.append(correlationId)
                         messagesToEnqueue.append(.forward(source: message.id, threadId: threadId, grouping: .auto, attributes: [], correlationId: correlationId))
                     }
-                    messagesToEnqueue = transformMessages(messagesToEnqueue, showNames: showNames, silently: silently, sendPaidMessageStars: requiresStars[peerId])
-                    shareSignals.append(enqueueMessages(account: currentContext.context.account, peerId: peerId, messages: messagesToEnqueue))
+                    if fastForward.isEnabled {
+                        let context = currentContext.context
+                        let topicReplySubject = replyToMessageId.flatMap { EngineMessageReplySubject(messageId: $0, quote: nil, innerSubject: nil) }
+                        let copies = fastForwardEnqueueMessages(messages: messages, comment: text, threadId: threadId, options: fastForward).map { message -> EnqueueMessage in
+                            let correlationId = Int64.random(in: Int64.min ... Int64.max)
+                            correlationIds.append(correlationId)
+                            return message.withUpdatedCorrelationId(correlationId)
+                        }
+                        let leadingMessages = messagesToEnqueue
+                        let paidMessageStars = requiresStars[peerId]
+                        shareSignals.append(
+                            fastForwardDraftReply(context: context, peerId: peerId, threadId: threadId)
+                            |> mapToSignal { draftReply -> Signal<[MessageId?], NoError> in
+                                let replySubject = draftReply ?? topicReplySubject
+                                var messagesToEnqueue = leadingMessages
+                                messagesToEnqueue.append(contentsOf: copies.map { $0.withUpdatedReplyToMessageId(replySubject) })
+                                messagesToEnqueue = transformMessages(messagesToEnqueue, showNames: true, silently: silently, sendPaidMessageStars: paidMessageStars)
+                                if draftReply != nil {
+                                    let _ = fastForwardClearDraft(context: context, peerId: peerId, threadId: threadId).startStandalone()
+                                }
+                                return enqueueMessages(account: context.account, peerId: peerId, messages: messagesToEnqueue)
+                            }
+                        )
+                    } else {
+                        messagesToEnqueue = transformMessages(messagesToEnqueue, showNames: showNames, silently: silently, sendPaidMessageStars: requiresStars[peerId])
+                        shareSignals.append(enqueueMessages(account: currentContext.context.account, peerId: peerId, messages: messagesToEnqueue))
+                    }
                 }
             case let .fromExternal(_, f):
                 return f(peerIds, topicIds, requiresStars, text, currentContext, silently)
@@ -2357,6 +2439,9 @@ public final class ShareController: ViewController {
                         }
                     }
                     if !hasStatuses {
+                        if !originalsToDelete.isEmpty, let strongSelf = self, let accountContext = strongSelf.currentContext as? ShareControllerAppAccountContext {
+                            strongSelf.deleteFastForwardOriginals(context: accountContext.context, messages: originalsToDelete)
+                        }
                         return .single(.done(correlationIds))
                     }
                     return .complete()
@@ -2391,6 +2476,20 @@ public final class ShareController: ViewController {
         super.containerLayoutUpdated(layout, transition: transition)
         
         self.controllerNode.containerLayoutUpdated(layout, navigationBarHeight: self.navigationLayout(layout: layout).navigationFrame.maxY, transition: transition)
+    }
+    
+    private func deleteFastForwardOriginals(context: AccountContext, messages: [Message]) {
+        let presentationData = self.presentationData
+        let navigationController = self.parentNavigationController
+        let _ = (fastForwardDeleteOriginals(context: context, messages: messages)
+        |> deliverOnMainQueue).startStandalone(next: { [weak navigationController] count in
+            guard count > 0, let topController = navigationController?.viewControllers.last as? ViewController else {
+                return
+            }
+            topController.present(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: presentationData.strings.Chat_MessagesDeletedToast_Text(Int32(count)), timeout: nil, customUndoText: nil), elevatedLayout: false, animateInAsReplacement: false, action: { _ in
+                return false
+            }), in: .current)
+        })
     }
     
     private func saveToCameraRoll(messages: [Message], completion: @escaping () -> Void) {

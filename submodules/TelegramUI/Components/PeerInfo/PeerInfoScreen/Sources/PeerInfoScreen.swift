@@ -5663,6 +5663,26 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                         return
                     }
                     strongSelf.forwardMessages(messageIds: nil)
+                }, fastForwardMessages: { [weak self] in
+                    guard let strongSelf = self, let messageIds = strongSelf.state.selectedMessageIds, !messageIds.isEmpty, strongSelf.peerId.namespace != Namespaces.Peer.SecretChat else {
+                        return
+                    }
+                    let _ = (strongSelf.context.engine.data.get(EngineDataMap(
+                        messageIds.map(TelegramEngine.EngineData.Item.Messages.Message.init)
+                    ))
+                    |> deliverOnMainQueue).startStandalone(next: { messageMap in
+                        let messages = messageMap.values.compactMap { $0 }
+                        guard let strongSelf = self, !messages.isEmpty else {
+                            return
+                        }
+                        strongSelf.headerNode.navigationButtonContainer.performAction?(.selectionDone, nil, nil)
+                        
+                        let shareController = strongSelf.context.sharedContext.makeShareController(context: strongSelf.context, params: ShareControllerParams(subject: .messages(messages.sorted(by: { lhs, rhs in
+                            return lhs.index < rhs.index
+                        }).map({ $0._asMessage() })), externalShare: false, immediateExternalShare: false, updatedPresentationData: strongSelf.controller?.updatedPresentationData, parentNavigationController: strongSelf.controller?.navigationController as? NavigationController, fastForward: true))
+                        strongSelf.view.endEditing(true)
+                        strongSelf.controller?.present(shareController, in: .window(.root))
+                    })
                 }, reportMessages: { [weak self] in
                     guard let strongSelf = self, let messageIds = strongSelf.state.selectedMessageIds, !messageIds.isEmpty else {
                         return

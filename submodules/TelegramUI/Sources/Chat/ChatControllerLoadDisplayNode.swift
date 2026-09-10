@@ -4854,7 +4854,37 @@ extension ChatControllerImpl {
             }
         }, chatController: { [weak self] in
             return self
-        }, statuses: ChatPanelInterfaceInteractionStatuses(editingMessage: self.editingMessage.get(), startingBot: self.startingBot.get(), unblockingPeer: self.unblockingPeer.get(), searching: self.searching.get(), loadingMessage: self.loadingMessage.get(), inlineSearch: self.performingInlineSearch.get()))
+        }, statuses: ChatPanelInterfaceInteractionStatuses(editingMessage: self.editingMessage.get(), startingBot: self.startingBot.get(), unblockingPeer: self.unblockingPeer.get(), searching: self.searching.get(), loadingMessage: self.loadingMessage.get(), inlineSearch: self.performingInlineSearch.get()), fastForwardMessages: { [weak self] messages in
+            guard let self, !messages.isEmpty else {
+                return
+            }
+            guard !self.presentAccountFrozenInfoIfNeeded(delay: true) else {
+                return
+            }
+            self.commitPurposefulAction()
+            self.presentFastForward(messages: messages.sorted(by: { $0.index < $1.index }))
+        }, fastForwardSelectedMessages: { [weak self] in
+            guard let self, let selectedIds = self.presentationInterfaceState.interfaceState.selectionState?.selectedIds, !selectedIds.isEmpty else {
+                return
+            }
+            guard !self.presentAccountFrozenInfoIfNeeded(delay: true) else {
+                return
+            }
+            self.commitPurposefulAction()
+            let _ = (self.context.engine.data.get(EngineDataMap(
+                selectedIds.map(TelegramEngine.EngineData.Item.Messages.Message.init)
+            ))
+            |> map { messages -> [EngineMessage] in
+                return messages.values.compactMap { $0 }
+            }
+            |> deliverOnMainQueue).startStandalone(next: { [weak self] messages in
+                guard let self, !messages.isEmpty else {
+                    return
+                }
+                self.updateChatPresentationInterfaceState(animated: true, interactive: true, { $0.updatedInterfaceState({ $0.withoutSelectionState() }) })
+                self.presentFastForward(messages: messages.sorted(by: { $0.index < $1.index }).map { $0._asMessage() })
+            })
+        })
         
         self.interfaceInteraction = interfaceInteraction
         

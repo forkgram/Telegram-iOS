@@ -4333,6 +4333,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         controller.onMediaTimestampLinkCopied = params.onMediaTimestampLinkCopied
         controller.parentNavigationController = params.parentNavigationController
         controller.canSendInHighQuality = params.canSendInHighQuality
+        controller.fastForward = params.fastForward
         return controller
     }
     
