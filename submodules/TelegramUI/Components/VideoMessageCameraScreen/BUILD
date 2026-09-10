@@ -33,6 +33,7 @@ swift_library(
         "//submodules/TelegramUI/Components/PlainButtonComponent",
         "//submodules/TelegramUI/Components/CameraButtonComponent",
         "//submodules/TooltipUI",
+        "//submodules/ContextUI",
         "//submodules/TelegramNotices",
         "//submodules/DeviceAccess",
         "//submodules/TelegramUI/Components/MediaEditor",

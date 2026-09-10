@@ -30,6 +30,22 @@ import ChatSendMessageActionUI
 import ChatControllerInteraction
 import LottieComponent
 import GlassBackgroundComponent
+import ContextUI
+
+private let videoMessageCameraUseFrontPositionKey = "TelegramVideoMessageCameraUseFrontPosition"
+private let videoMessageCameraRemembersPositionKey = "TelegramVideoMessageCameraRemembersPosition"
+
+private var videoMessageCameraRemembersPosition: Bool {
+    get {
+        if let value = UserDefaults.standard.object(forKey: videoMessageCameraRemembersPositionKey) as? NSNumber {
+            return value.boolValue
+        }
+        return true
+    }
+    set {
+        UserDefaults.standard.set(newValue as NSNumber, forKey: videoMessageCameraRemembersPositionKey)
+    }
+}
 
 struct CameraState: Equatable {
     enum Recording: Equatable {
@@ -110,6 +126,7 @@ enum CameraScreenTransition {
 }
 
 private let viewOnceButtonTag = GenericComponentViewTag()
+private let optionsButtonTag = GenericComponentViewTag()
 
 private final class VideoMessageCameraScreenComponent: CombinedComponent {
     typealias EnvironmentType = ViewControllerComponentContainer.Environment
@@ -286,6 +303,10 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
         
         deinit {
             self.resultDisposable.dispose()
+        }
+        
+        func presentOptions() {
+            self.getController()?.node.presentCameraOptions()
         }
         
         func toggleViewOnce() {
@@ -521,6 +542,7 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
         let flashButtonBackground = Child(GlassBackgroundComponent.self)
         let flashButton = Child(CameraButton.self)
         
+        let optionsButton = Child(PlainButtonComponent.self)
         let viewOnceButton = Child(PlainButtonComponent.self)
         let recordMoreButton = Child(PlainButtonComponent.self)
         
@@ -723,6 +745,49 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
                         .disappear(.default(scale: true, alpha: true))
                     )
                 }
+                
+                let optionsButton = optionsButton.update(
+                    component: PlainButtonComponent(
+                        content: AnyComponent(
+                            ZStack([
+                                AnyComponentWithIdentity(
+                                    id: "background",
+                                    component: AnyComponent(
+                                        GlassBackgroundComponent(
+                                            size: CGSize(width: 40.0, height: 40.0),
+                                            cornerRadius: 40.0 * 0.5,
+                                            isDark: environment.theme.overallDarkAppearance,
+                                            tintColor: .init(kind: .panel)
+                                        )
+                                    )
+                                ),
+                                AnyComponentWithIdentity(
+                                    id: "icon",
+                                    component: AnyComponent(
+                                        BundleIconComponent(
+                                            name: "Chat List/NavigationMore",
+                                            tintColor: environment.theme.chat.inputPanel.panelControlColor
+                                        )
+                                    )
+                                )
+                            ])
+                        ),
+                        effectAlignment: .center,
+                        action: { [weak state] in
+                            state?.presentOptions()
+                        },
+                        animateAlpha: false,
+                        tag: optionsButtonTag
+                    ),
+                    availableSize: availableSize,
+                    transition: context.transition
+                )
+                let optionsButtonX = min(availableSize.width - sideInset - optionsButton.size.width / 2.0, component.previewFrame.maxX - optionsButton.size.width / 2.0)
+                context.add(optionsButton
+                    .position(CGPoint(x: optionsButtonX, y: component.previewFrame.minY + optionsButton.size.height / 2.0))
+                    .appear(.default(scale: true, alpha: true))
+                    .disappear(.default(scale: true, alpha: true))
+                )
             }
             
             if showViewOnce {
@@ -845,6 +910,22 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
     }
 }
 
+private final class VideoMessageCameraOptionsContentSource: ContextReferenceContentSource {
+    private let sourceView: UIView
+    
+    var keepInPlace: Bool {
+        return true
+    }
+    
+    init(sourceView: UIView) {
+        self.sourceView = sourceView
+    }
+    
+    func transitionInfo() -> ContextControllerReferenceViewInfo? {
+        return ContextControllerReferenceViewInfo(referenceView: self.sourceView, contentAreaInScreenSpace: UIScreen.main.bounds, actionsPosition: .bottom)
+    }
+}
+
 public class VideoMessageCameraScreen: ViewController {
     public enum CaptureResult {
         public struct Video {
@@ -950,7 +1031,10 @@ public class VideoMessageCameraScreen: ViewController {
             self.previewContainerView.addSubview(self.previewContainerContentView)
                         
             let isDualCameraEnabled = Camera.isDualCameraSupported(forRoundVideo: true)
-            let isFrontPosition = "".isEmpty
+            var isFrontPosition = true
+            if videoMessageCameraRemembersPosition, let storedUseFrontPosition = UserDefaults.standard.object(forKey: videoMessageCameraUseFrontPositionKey) as? NSNumber {
+                isFrontPosition = storedUseFrontPosition.boolValue
+            }
             
             self.mainPreviewView = CameraSimplePreviewView(frame: .zero, main: true, roundVideo: true)
             self.additionalPreviewView = CameraSimplePreviewView(frame: .zero, main: false, roundVideo: true)
@@ -1091,7 +1175,12 @@ public class VideoMessageCameraScreen: ViewController {
                 guard let self else {
                     return
                 }
+                let previousPosition = self.cameraState.position
                 self.cameraState = self.cameraState.updatedPosition(position).updatedFlashMode(flashMode)
+                
+                if previousPosition != position {
+                    UserDefaults.standard.set((position == .front) as NSNumber, forKey: videoMessageCameraUseFrontPositionKey)
+                }
                 
                 if !self.cameraState.isDualCameraEnabled {
                     self.animatePositionChange()
@@ -1335,6 +1424,33 @@ public class VideoMessageCameraScreen: ViewController {
                     let _ = ApplicationSpecificNotice.incrementVideoMessagesPauseSuggestion(accountManager: self.context.sharedContext.accountManager).startStandalone()
                 }
             })
+        }
+        
+        fileprivate func presentCameraOptions() {
+            guard let controller = self.controller, let sourceView = self.componentHost.findTaggedView(tag: optionsButtonTag) else {
+                return
+            }
+            
+            self.dismissAllTooltips()
+            
+            let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+            let remembersPosition = videoMessageCameraRemembersPosition
+            let items: [ContextMenuItem] = [
+                .action(ContextMenuActionItem(text: presentationData.strings.VideoMessage_RememberCamera, icon: { theme in
+                    return remembersPosition ? generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Check"), color: theme.contextMenu.primaryColor) : nil
+                }, action: { _, f in
+                    f(.default)
+                    
+                    videoMessageCameraRemembersPosition = !remembersPosition
+                }))
+            ]
+            
+            let contextController = makeContextController(
+                presentationData: presentationData,
+                source: .reference(VideoMessageCameraOptionsContentSource(sourceView: sourceView)),
+                items: .single(ContextController.Items(content: .list(items)))
+            )
+            controller.presentInGlobalOverlay(contextController)
         }
         
         private func displayViewOnceTooltip(text: String, hasIcon: Bool) {

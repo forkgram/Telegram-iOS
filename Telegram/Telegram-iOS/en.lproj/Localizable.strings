@@ -16629,6 +16629,8 @@ Error: %8$@";
 "Login.QrStep2" = "Go to **Settings** > **Devices** > **Link Desktop Device**";
 "Login.QrStep3" = "Point that device at this screen to confirm login";
 "Login.QrUsePhoneNumber" = "Or log in using your phone number";
+
+"VideoMessage.RememberCamera" = "Remember Camera";
 "HiddenAccounts.SetAppPasscode" = "Set App Passcode";
 "HiddenAccounts.CodeType4Digits" = "4 digits";
 "HiddenAccounts.CodeType6Digits" = "6 digits";
