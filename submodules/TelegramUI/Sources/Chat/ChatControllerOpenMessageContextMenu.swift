@@ -22,6 +22,7 @@ import ChatPresentationInterfaceState
 extension ChatControllerImpl {
     func openMessageContextMenu(message: EngineMessage, selectAll: Bool, node: ASDisplayNode, frame: CGRect, anyRecognizer: UIGestureRecognizer?, location: CGPoint?) -> Void {
         if self.presentationInterfaceState.interfaceState.selectionState != nil {
+            self.openMessageEditInSelectionContextMenu(message: message, node: node, location: location, anyRecognizer: anyRecognizer)
             return
         }
         let presentationData = self.presentationData
@@ -636,6 +637,43 @@ extension ChatControllerImpl {
                 self.window?.presentInGlobalOverlay(controller)
             })
         }
+    }
+
+    private func openMessageEditInSelectionContextMenu(message: EngineMessage, node: ASDisplayNode, location: CGPoint?, anyRecognizer: UIGestureRecognizer?) {
+        let presentationData = self.presentationData
+        var actions: [ContextMenuItem] = []
+        if canEditMessage(context: self.context, limitsConfiguration: self.context.currentLimitsConfiguration.with { EngineConfiguration.Limits($0) }, message: message._asMessage()) {
+            actions.append(.action(ContextMenuActionItem(text: presentationData.strings.Conversation_MessageDialogEdit, icon: { theme in
+                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Edit"), color: theme.actionSheet.primaryTextColor)
+            }, action: { [weak self] c, f in
+                c?.dismiss(completion: { [weak self] in
+                    guard let self else {
+                        return
+                    }
+                    self.updateChatPresentationInterfaceState(animated: false, interactive: true, { $0.updatedInterfaceState { $0.withoutSelectionState() } }, completion: { [weak self] _ in
+                        self?.interfaceInteraction?.setupEditMessage(message.id, { _ in })
+                    })
+                })
+            })))
+        }
+        guard !actions.isEmpty else {
+            return
+        }
+
+        let source: ContextContentSource
+        if let location = location {
+            source = .location(ChatMessageContextLocationContentSource(controller: self, location: node.view.convert(node.bounds, to: nil).origin.offsetBy(dx: location.x, dy: location.y)))
+        } else {
+            source = .extracted(ChatMessageContextExtractedContentSource(chatController: self, chatNode: self.chatDisplayNode, engine: self.context.engine, message: message, selectAll: false, keepDefaultContentTouches: false))
+        }
+        self.canReadHistory.set(false)
+        let isSecret = self.presentationInterfaceState.copyProtectionEnabled || self.presentationInterfaceState.myCopyProtectionEnabled || self.chatLocation.peerId?.namespace == Namespaces.Peer.SecretChat
+        let controller = makeContextController(presentationData: presentationData, source: source, items: .single(ContextController.Items(content: .list(actions))), recognizer: anyRecognizer as? TapLongTapOrDoubleTapGestureRecognizer, gesture: anyRecognizer as? ContextGesture, disableScreenshots: isSecret)
+        controller.dismissed = { [weak self] in
+            self?.canReadHistory.set(true)
+        }
+        self.currentContextController = controller
+        self.window?.presentInGlobalOverlay(controller)
     }
 }
 
